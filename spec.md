@@ -1,49 +1,50 @@
-# ID&PC Chak - Printing Center
+# ID&PC Chak - OTP-Based Admin Authentication
 
 ## Current State
-
-- Backend (`main.mo`) has full CRUD for invoices, employees, services, reviews, logo, banner.
-- **Invoice bug**: `encodeInvoice` converts invoice IDs to bigint using `idStringToBigInt` which extracts trailing number. IDs like "INV-001", "INV-002" map to `1n`, `2n`. But `addInvoice` in backend uses `invoices.add(invoice.id, invoice)` — `Map.add` is an *update/upsert*. So invoice with id `1n` overwrites previous invoice with id `1n` if the same sequence is re-used. The real issue: `getNextInvoiceNumber()` in `storage.ts` uses `invoices.length + 1` — but after backend sync, the frontend local list may be empty, so all new invoices get id INV-001, colliding in the backend map.
-- **Customer orders (Purchase Page)**: `PurchasePage.tsx` `handleSubmit` only shows a toast — orders are never saved to localStorage or backend. No backend type, no storage function, no admin panel tab exists for orders.
-- **Contact form**: `ContactPage.tsx` calls `saveMessage()` which saves to localStorage only. No backend storage, no admin panel tab to view messages, no notification system.
-- **Product images**: `Service` type has no image field. No upload UI in Admin Panel services tab. No display of product image on Products page or Purchase page.
+- Admin login at `/admin` uses username `Kamran911` + password (checked against localStorage / backend `getAdminPassword`).
+- Forgot Password uses 3 security questions at `/admin/reset-password`.
+- No OTP system exists; no rate limiting; no audit logging.
+- Admin session is stored in `sessionStorage.isAdminLoggedIn`.
 
 ## Requested Changes (Diff)
 
 ### Add
-- `CustomerOrder` type in storage + backend: id, serviceId, serviceName, customerName, phone, quantity, notes, totalPrice, date, status
-- `ContactMessage` type exposed to backend: id, name, phone, message, date (currently only in localStorage)
-- Backend functions: `addOrder`, `getAllOrders`, `deleteOrder`; `addContactMessage`, `getAllContactMessages`, `deleteContactMessage`
-- Admin panel: "Orders" tab showing all customer orders with details; "Messages" tab showing contact form submissions with notification badge for unread
-- Notification badge on admin panel nav when there are unread contact messages
-- Product image field (`image: Text`) in Service type (backend and frontend)
-- Image upload UI in Admin Panel services tab (edit/add service form)
-- Product image display on ProductsPage cards and PurchasePage
+- OTP generation logic (4-digit random code) stored in localStorage with timestamp and expiry (120 seconds)
+- OTP attempt counter (max 3 tries); lockout state after 3 failures
+- Rate limiting: one OTP request per 30 seconds (cooldown timer on resend)
+- Masked phone display: `0303******58` format
+- Audit log in localStorage: records login attempts, OTP sends, OTP successes/failures with timestamps
+- OTP step in Admin Login flow: after correct username+password → show OTP entry screen (simulated — OTP displayed on screen since no SMS API available)
+- OTP-based Forgot Password flow replacing security questions
+- Resend OTP button with 30-second cooldown countdown
+- Single-use OTP: cleared after successful use
+- `src/lib/otp.ts` — OTP utility module
 
 ### Modify
-- **Fix invoice ID collision**: Change `getNextInvoiceNumber()` to use `Date.now()` as unique ID base instead of `invoices.length + 1`, ensuring unique IDs even after backend re-sync. Also update `encodeInvoice` to handle timestamp-based IDs properly.
-- `PurchasePage.tsx`: On order submit, save order to backend via new `addOrder` function instead of just showing toast
-- `ContactPage.tsx`: On form submit, also save contact message to backend via new `addContactMessage`
-- `storage.ts`: Add `CustomerOrder` and order helpers; update `ContactMessage` helpers to also sync; add `getOrders`, `saveOrders`, `addOrder` functions
-- `backendData.ts`: Add `fetchOrders`, `backendAddOrder`, `fetchContactMessages`, `backendAddContactMessage`, `backendDeleteOrder`, `backendDeleteContactMessage`
-- `useQueries.ts`: Add `useOrders()` and `useContactMessages()` hooks
-- `Service` type: Add optional `image` field (string, base64 data URL)
-- Admin services form: Add image upload field
-- Service encoding/decoding: include image field
+- `AdminLoginPage.tsx` — add Step 2 OTP verification after credentials
+- `ResetPasswordPage.tsx` — replace security questions with OTP step
 
 ### Remove
-- Nothing removed
+- Security questions from `ResetPasswordPage.tsx`
 
 ## Implementation Plan
-
-1. **Backend** — Add `CustomerOrder` type, `ContactMessage` type, and full CRUD for both. Add `image` field to `Service` type.
-2. **storage.ts** — Add `CustomerOrder` interface and helpers (`getOrders`, `saveOrders`, `addOrder`, `deleteOrder`). Add `getContactMessages`/`saveContactMessages` helpers. Add `getUnreadMessageCount`/`markMessagesRead`. Add `image` to `Service` interface.
-3. **backendData.ts** — Add encode/decode for `CustomerOrder` and `ContactMessage`. Add `fetchOrders`, `backendAddOrder`, `backendDeleteOrder`, `fetchContactMessages`, `backendAddContactMessage`, `backendDeleteContactMessage`. Update service encode/decode to handle `image` field.
-4. **useQueries.ts** — Add `useOrders()` and `useContactMessages()` hooks with 5s polling.
-5. **Fix invoice IDs** — Update `getNextInvoiceNumber()` to generate timestamp-based unique IDs. Update `encodeInvoice` to handle these IDs in bigint conversion.
-6. **PurchasePage.tsx** — Wire submit to call `backendAddOrder` and store to backend.
-7. **ContactPage.tsx** — Wire submit to also call `backendAddContactMessage`.
-8. **AdminDashboardPage.tsx** — Add "Orders" tab and "Messages" tab. Show notification badge for unread messages. Show order details table. Show contact message table with delete option.
-9. **ProductsPage.tsx** — Show product image if available in service card.
-10. **PurchasePage.tsx** — Show product image if available.
-11. **Admin services form** — Add image upload field (file input → base64).
+1. Create `src/frontend/src/lib/otp.ts` with:
+   - `generateOTP()` → stores 4-digit OTP in localStorage with timestamp, returns the code
+   - `verifyOTP(code)` → checks code, expiry (120s), attempts (max 3); returns `{success, error}`
+   - `canRequestOTP()` → checks 30-second rate limit; returns boolean
+   - `clearOTP()` → removes OTP after successful use
+   - `getOTPCooldownSeconds()` → returns remaining cooldown seconds
+   - `logAuditEvent(event, detail)` → appends to audit log array in localStorage
+   - `getAuditLog()` → returns the log array
+   - `getMaskedPhone()` → returns `0303******58`
+2. Update `AdminLoginPage.tsx`:
+   - Step 1: username + password form (existing)
+   - On correct credentials → call `generateOTP()`, show OTP on screen ("Your OTP is: XXXX" for demo since no SMS), advance to Step 2
+   - Step 2: 4-digit OTP input with countdown timer (120s), attempt counter display, resend button (30s cooldown)
+   - On OTP success → set session, navigate to dashboard
+   - On OTP fail → increment attempts, show error, lock after 3 fails
+3. Update `ResetPasswordPage.tsx`:
+   - Step 1: Click to send OTP (show masked phone, generate OTP, display it on screen for demo)
+   - Step 2: Enter OTP (same rules: 120s expiry, 3 attempts, resend with 30s cooldown)
+   - Step 3: New password entry (existing UI)
+   - Remove all security question logic

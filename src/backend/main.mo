@@ -1,4 +1,4 @@
-import Migration "migration";
+
 import Map "mo:core/Map";
 import Nat "mo:core/Nat";
 import Text "mo:core/Text";
@@ -6,7 +6,7 @@ import Text "mo:core/Text";
 // Printing shop backend for ID&PC Chak
 // Stores: logo, banner, admin password, services, employees, reviews, invoices, customer orders, contact messages
 
-(with migration = Migration.run)
+
 actor {
   // ===== Type Definitions =====
 

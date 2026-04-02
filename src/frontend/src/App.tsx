@@ -9,6 +9,7 @@ import BillCheckPage from "@/pages/BillCheckPage";
 import ContactPage from "@/pages/ContactPage";
 import HomePage from "@/pages/HomePage";
 import ProductsPage from "@/pages/ProductsPage";
+import PurchasePage from "@/pages/PurchasePage";
 import ResetPasswordPage from "@/pages/ResetPasswordPage";
 import {
   Outlet,
@@ -80,6 +81,12 @@ const productsRoute = createRoute({
   component: ProductsPage,
 });
 
+const productDetailRoute = createRoute({
+  getParentRoute: () => publicLayoutRoute,
+  path: "/products/$serviceId",
+  component: PurchasePage,
+});
+
 const billCheckRoute = createRoute({
   getParentRoute: () => publicLayoutRoute,
   path: "/bill-check",
@@ -110,6 +117,7 @@ const routeTree = rootRoute.addChildren([
     aboutRoute,
     contactRoute,
     productsRoute,
+    productDetailRoute,
     billCheckRoute,
   ]),
   adminRoute,

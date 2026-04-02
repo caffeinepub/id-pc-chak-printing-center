@@ -1,196 +1,119 @@
 import { Card, CardContent } from "@/components/ui/card";
-import { CheckCircle2 } from "lucide-react";
+import { useEmployees, useServices } from "@/hooks/useQueries";
+import { CheckCircle2, Users } from "lucide-react";
 import { useEffect } from "react";
 
-const REAL_SERVICES = [
-  {
-    icon: "🔢",
-    title: "Number Plates",
-    description:
-      "Custom number plates for vehicles with durable and high-quality material.",
-  },
-  {
-    icon: "✂️",
-    title: "Sticker Cutting",
-    description:
-      "Professional sticker cutting in any shape or size for branding and decoration.",
-  },
-  {
-    icon: "🛡️",
-    title: "Coating",
-    description:
-      "Protective coating for prints — glossy or matte finish available.",
-  },
-  {
-    icon: "🪪",
-    title: "Duplicate Cards",
-    description:
-      "High-quality duplicate ID and membership cards made accurately.",
-  },
-  {
-    icon: "📝",
-    title: "Sindhi, Urdu, Arabic & English Composing",
-    description:
-      "Professional multi-language composing and typesetting services.",
-  },
-  {
-    icon: "🧢",
-    title: "Cap Printing",
-    description:
-      "Custom cap printing with logos and text for events, teams, and promotions.",
-  },
-  {
-    icon: "👕",
-    title: "T-Shirt Printing",
-    description:
-      "High-quality T-shirt printing with your custom design, text, or logo.",
-  },
-  {
-    icon: "🖼️",
-    title: "Photo Print",
-    description:
-      "Vivid photo prints in all standard sizes with glossy or matte finish.",
-  },
-  {
-    icon: "📷",
-    title: "Photo Studio",
-    description:
-      "Professional photo studio for ID photos, portraits, and special occasions.",
-  },
-  {
-    icon: "🗂️",
-    title: "Photocopy",
-    description:
-      "Fast and clear photocopying for documents, forms, and records.",
-  },
-  {
-    icon: "🖨️",
-    title: "Panaflex (Flex Printing)",
-    description:
-      "Large-format flex/panaflex printing for shops, events, and outdoor advertising.",
-  },
-  {
-    icon: "💌",
-    title: "Wedding Cards",
-    description:
-      "Beautiful custom wedding invitation cards with premium paper and designs.",
-  },
-  {
-    icon: "🃏",
-    title: "Visiting Cards",
-    description:
-      "Professional visiting cards with your brand identity at affordable prices.",
-  },
-  {
-    icon: "📄",
-    title: "Pamphlets",
-    description:
-      "Eye-catching pamphlet design and printing for any occasion or promotion.",
-  },
-  {
-    icon: "📢",
-    title: "Advertisements",
-    description:
-      "Creative advertisement design and printing for shops, events, and campaigns.",
-  },
-];
-
-const whyUs = [
-  "Over 10 years of experience in printing and designing",
-  "State-of-the-art printing equipment",
-  "Affordable prices without compromising quality",
-  "Fast turnaround time — same day service available",
-  "Custom designs tailored to your needs",
-  "Professional and friendly customer service",
-  "Serving entire District Shikarpur area",
-  "100% customer satisfaction guarantee",
-];
-
 export default function AboutPage() {
+  const { data: employees = [] } = useEmployees();
+  const { data: services = [] } = useServices();
+
   useEffect(() => {
     document.title = "About Us - ID&PC Chak";
   }, []);
 
   return (
-    <main className="py-16">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        {/* Page header */}
-        <div className="text-center mb-14 animate-fade-in-up">
+    <main className="py-12">
+      {/* Hero */}
+      <section className="bg-brand-blue text-white py-16">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
           <p className="text-brand-gold font-semibold text-sm uppercase tracking-widest mb-2">
             Our Story
           </p>
-          <h1 className="font-heading font-bold text-4xl text-brand-blue mb-4">
+          <h1 className="font-heading font-bold text-4xl sm:text-5xl mb-4">
             About ID&PC Chak
           </h1>
-          <p className="text-muted-foreground max-w-2xl mx-auto leading-relaxed">
-            Ihsan Designing and Printing Center Chak — your trusted local
-            printing and designing partner in Rustam Road Chak, District
-            Shikarpur since 2015.
+          <p className="text-white/80 text-lg max-w-2xl mx-auto">
+            Ihsan Designing & Printing Center has been serving the community of
+            Rustam Road Chak, District Shikarpur since 2015. We are dedicated to
+            quality, speed, and affordability.
           </p>
         </div>
+      </section>
 
-        {/* History */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center mb-20">
-          <div className="animate-fade-in-up">
-            <h2 className="font-heading font-bold text-2xl text-brand-blue mb-4">
-              Our History & Mission
-            </h2>
-            <p className="text-muted-foreground leading-relaxed mb-4">
-              Ihsan Designing and Printing Center Chak (ID&PC Chak) was
-              established in 2015 by Mr. Kamran Ali with a simple mission: to
-              provide high-quality printing and designing services to the people
-              of Rustam Road Chak and surrounding areas at affordable prices.
-            </p>
-            <p className="text-muted-foreground leading-relaxed mb-4">
-              Starting with basic printing services, we have grown into a
-              full-service design and print shop with modern equipment and a
-              team of 5 dedicated professionals.
-            </p>
-            <p className="text-muted-foreground leading-relaxed">
-              Our mission is to empower local businesses, families, and
-              individuals with professional-quality printing and design
-              solutions that help them stand out.
-            </p>
-          </div>
-          <div className="bg-brand-blue rounded-2xl p-8 text-white animate-fade-in-up animate-delay-200">
-            <h3 className="font-heading font-bold text-xl mb-4 text-brand-gold">
-              At a Glance
-            </h3>
-            <p className="text-white/80 text-sm mb-1">
-              <span className="text-brand-gold font-semibold">CEO:</span> Kamran
-              Ali
-            </p>
-            <p className="text-white/80 text-sm mb-1">
-              <span className="text-brand-gold font-semibold">Phone:</span> +92
-              305 7855334
-            </p>
-            <p className="text-white/80 text-sm mb-4">
-              <span className="text-brand-gold font-semibold">Email:</span>{" "}
-              ihsanprintingcnetrechak@gmail.com
-            </p>
-            <div className="grid grid-cols-2 gap-6">
-              <div className="text-center">
-                <p className="text-4xl font-bold text-brand-gold">2015</p>
-                <p className="text-white/70 text-sm mt-1">Established</p>
-              </div>
-              <div className="text-center">
-                <p className="text-4xl font-bold text-brand-gold">5+</p>
-                <p className="text-white/70 text-sm mt-1">Employees</p>
-              </div>
-              <div className="text-center">
-                <p className="text-4xl font-bold text-brand-gold">500+</p>
-                <p className="text-white/70 text-sm mt-1">Happy Customers</p>
-              </div>
-              <div className="text-center">
-                <p className="text-4xl font-bold text-brand-gold">15+</p>
-                <p className="text-white/70 text-sm mt-1">Services</p>
-              </div>
+      {/* Business Stats */}
+      <section className="py-16 bg-muted/50">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-6 text-center">
+            <div className="bg-background rounded-2xl p-6 shadow-card border-2 border-brand-blue-mid">
+              <p className="font-heading font-bold text-4xl text-brand-blue">
+                {services.length}+
+              </p>
+              <p className="text-muted-foreground text-sm mt-1">Services</p>
+            </div>
+            <div className="bg-background rounded-2xl p-6 shadow-card border-2 border-brand-gold/40">
+              <p className="font-heading font-bold text-4xl text-brand-gold">
+                10+
+              </p>
+              <p className="text-muted-foreground text-sm mt-1">
+                Years Experience
+              </p>
+            </div>
+            <div className="bg-background rounded-2xl p-6 shadow-card border-2 border-brand-red/30">
+              <p className="font-heading font-bold text-4xl text-brand-red">
+                1000+
+              </p>
+              <p className="text-muted-foreground text-sm mt-1">
+                Happy Customers
+              </p>
+            </div>
+            <div className="bg-background rounded-2xl p-6 shadow-card border-2 border-brand-blue-mid">
+              <p className="font-heading font-bold text-4xl text-brand-blue">
+                {employees.length}
+              </p>
+              <p className="text-muted-foreground text-sm mt-1">Team Members</p>
             </div>
           </div>
         </div>
+      </section>
 
-        {/* Services — real list */}
-        <div className="mb-20">
+      {/* Our Story */}
+      <section className="py-16 bg-background">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
+            <div>
+              <p className="text-brand-gold font-semibold text-sm uppercase tracking-widest mb-2">
+                Who We Are
+              </p>
+              <h2 className="font-heading font-bold text-3xl text-brand-blue mb-4">
+                Our Story
+              </h2>
+              <p className="text-muted-foreground leading-relaxed mb-4">
+                ID&PC Chak was founded by Kamran Ali with the vision to bring
+                professional printing and designing services to the heart of
+                Chak, District Shikarpur. Starting with a single printer and a
+                passion for design, we have grown into a full-service printing
+                center offering 15+ services.
+              </p>
+              <p className="text-muted-foreground leading-relaxed">
+                From number plates and visiting cards to wedding invitations and
+                large-format flex banners, we handle every printing need with
+                precision and care. Our commitment to quality and customer
+                satisfaction has made us the trusted printing center of the
+                region.
+              </p>
+            </div>
+            <div className="space-y-3">
+              {[
+                "Professional quality printing on every order",
+                "Fast turnaround times without compromising quality",
+                "Affordable pricing for all budgets",
+                "Expert design assistance available",
+                "Multi-language composing: Sindhi, Urdu, Arabic & English",
+                "Serving the community since 2015",
+              ].map((item) => (
+                <div key={item} className="flex items-start gap-3">
+                  <CheckCircle2 className="w-5 h-5 text-brand-gold flex-shrink-0 mt-0.5" />
+                  <span className="text-muted-foreground text-sm">{item}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Services List */}
+      <section className="py-16 bg-muted/50">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-10">
             <p className="text-brand-gold font-semibold text-sm uppercase tracking-widest mb-2">
               What We Do
@@ -199,51 +122,95 @@ export default function AboutPage() {
               Our Services
             </h2>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {REAL_SERVICES.map((svc, i) => (
-              <Card
-                key={svc.title}
-                className="border-2 border-border hover:border-brand-blue-mid shadow-card transition-all animate-fade-in-up"
-                style={{ animationDelay: `${i * 0.07}s`, opacity: 0 }}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+            {services.map((svc) => (
+              <div
+                key={svc.id}
+                className="bg-background rounded-xl p-4 text-center shadow-card border border-border hover:border-brand-blue-mid transition-colors"
               >
-                <CardContent className="p-5">
-                  <div className="flex gap-3 items-start">
-                    <span className="text-3xl flex-shrink-0">{svc.icon}</span>
-                    <div>
-                      <h3 className="font-heading font-bold text-base text-brand-blue mb-1">
-                        {svc.title}
-                      </h3>
-                      <p className="text-muted-foreground text-sm leading-relaxed">
-                        {svc.description}
-                      </p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </div>
-
-        {/* Why Choose Us */}
-        <div className="bg-muted/50 rounded-2xl p-8">
-          <div className="text-center mb-8">
-            <p className="text-brand-gold font-semibold text-sm uppercase tracking-widest mb-2">
-              Our Strengths
-            </p>
-            <h2 className="font-heading font-bold text-3xl text-brand-blue">
-              Why Choose ID&PC Chak?
-            </h2>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {whyUs.map((reason) => (
-              <div key={reason} className="flex items-start gap-3">
-                <CheckCircle2 className="w-5 h-5 text-brand-gold flex-shrink-0 mt-0.5" />
-                <p className="text-foreground text-sm">{reason}</p>
+                <div className="text-3xl mb-2">{svc.icon}</div>
+                <p className="font-semibold text-brand-blue text-sm">
+                  {svc.name}
+                </p>
               </div>
             ))}
           </div>
         </div>
-      </div>
+      </section>
+
+      {/* Meet Our Team */}
+      {employees.length > 0 && (
+        <section className="py-16 bg-background">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="text-center mb-10">
+              <p className="text-brand-gold font-semibold text-sm uppercase tracking-widest mb-2">
+                The People Behind ID&PC
+              </p>
+              <h2 className="font-heading font-bold text-3xl text-brand-blue">
+                Meet Our Team
+              </h2>
+              <p className="text-muted-foreground mt-2">
+                <span className="inline-flex items-center gap-1 font-semibold text-brand-blue">
+                  <Users className="w-4 h-4" /> {employees.length} dedicated
+                  team member{employees.length !== 1 ? "s" : ""}
+                </span>
+              </p>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-6">
+              {employees.map((emp) => (
+                <Card
+                  key={emp.id}
+                  className="border-2 border-border hover:border-brand-blue-mid shadow-card hover:shadow-card-hover transition-all duration-300 text-center group card-3d"
+                >
+                  <CardContent className="p-6">
+                    {emp.photo ? (
+                      <img
+                        src={emp.photo}
+                        alt={emp.fullName}
+                        className="w-24 h-24 rounded-full object-cover border-4 border-brand-gold mx-auto mb-4 group-hover:scale-105 transition-transform"
+                      />
+                    ) : (
+                      <div className="w-24 h-24 rounded-full bg-brand-blue flex items-center justify-center mx-auto mb-4 border-4 border-brand-gold group-hover:scale-105 transition-transform">
+                        <span className="text-white font-bold text-3xl">
+                          {emp.fullName.charAt(0)}
+                        </span>
+                      </div>
+                    )}
+                    <p className="font-heading font-bold text-brand-blue text-lg leading-tight">
+                      {emp.fullName}
+                    </p>
+                    <p className="text-brand-gold font-semibold text-sm mt-1">
+                      {emp.designation}
+                    </p>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* Owner Info */}
+      <section className="py-16 bg-brand-blue text-white">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+          <p className="text-brand-gold font-semibold text-sm uppercase tracking-widest mb-2">
+            Leadership
+          </p>
+          <h2 className="font-heading font-bold text-3xl mb-4">
+            CEO & Founder
+          </h2>
+          <div className="inline-flex flex-col items-center">
+            <div className="w-24 h-24 rounded-full bg-brand-gold/20 border-4 border-brand-gold flex items-center justify-center mb-4">
+              <span className="text-brand-gold font-bold text-3xl">K</span>
+            </div>
+            <p className="font-heading font-bold text-2xl text-brand-gold">
+              Kamran Ali
+            </p>
+            <p className="text-white/70 mt-1">Founder & CEO, ID&PC Chak</p>
+            <p className="text-white/60 text-sm mt-2">+92 305 7855334</p>
+          </div>
+        </div>
+      </section>
     </main>
   );
 }

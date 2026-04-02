@@ -1,6 +1,12 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { type Review, getReviews } from "@/lib/storage";
+import {
+  useBannerImage,
+  useEmployees,
+  useLogo,
+  useReviews,
+  useServices,
+} from "@/hooks/useQueries";
 import { Link, useNavigate } from "@tanstack/react-router";
 import {
   ArrowRight,
@@ -9,124 +15,32 @@ import {
   MapPin,
   Phone,
   Star,
+  Tag,
+  Users,
 } from "lucide-react";
-import { useEffect, useState } from "react";
-
-const LOGO =
-  "/assets/uploads/screenshot_2026-03-26_231047-019d2b57-e48c-70e8-9b2c-db4c4ce8391c-1.png";
-
-const REAL_SERVICES = [
-  {
-    icon: "🔢",
-    title: "Number Plates",
-    description:
-      "Custom number plates for vehicles, made with precision and durable material.",
-  },
-  {
-    icon: "✂️",
-    title: "Sticker Cutting",
-    description:
-      "Professional sticker cutting in any shape or size for branding and decoration.",
-  },
-  {
-    icon: "🛡️",
-    title: "Coating",
-    description:
-      "Protective coating services to give your prints a glossy or matte finish.",
-  },
-  {
-    icon: "🪪",
-    title: "Duplicate Cards",
-    description:
-      "High-quality duplicate ID and membership cards made quickly and accurately.",
-  },
-  {
-    icon: "📝",
-    title: "Composing",
-    description:
-      "Sindhi, Urdu, Arabic & English composing services with professional typesetting.",
-  },
-  {
-    icon: "🧢",
-    title: "Cap Printing",
-    description:
-      "Custom cap printing with logos and text for events, teams, and promotions.",
-  },
-  {
-    icon: "👕",
-    title: "T-Shirt Printing",
-    description:
-      "High-quality T-shirt printing with your custom design, text, or logo.",
-  },
-  {
-    icon: "🖼️",
-    title: "Photo Print",
-    description:
-      "Clear and vivid photo prints in all standard sizes with glossy or matte finish.",
-  },
-  {
-    icon: "📷",
-    title: "Photo Studio",
-    description:
-      "Professional photo studio services for ID photos, portraits, and events.",
-  },
-  {
-    icon: "🗂️",
-    title: "Photocopy",
-    description:
-      "Fast and clear photocopying services for documents, forms, and records.",
-  },
-  {
-    icon: "🖨️",
-    title: "Panaflex (Flex Printing)",
-    description:
-      "Large-format flex/panaflex printing for shops, events, and advertisements.",
-  },
-  {
-    icon: "💌",
-    title: "Wedding Cards",
-    description:
-      "Beautiful custom wedding invitation cards with premium designs and paper.",
-  },
-  {
-    icon: "🃏",
-    title: "Visiting Cards",
-    description:
-      "Professional visiting cards with your brand identity at affordable prices.",
-  },
-  {
-    icon: "📄",
-    title: "Pamphlets",
-    description:
-      "Eye-catching pamphlet design and printing for any occasion or promotion.",
-  },
-  {
-    icon: "📢",
-    title: "Advertisements",
-    description:
-      "Creative advertisement design and printing for shops, events, and campaigns.",
-  },
-];
-
-// Show first 8 on home page
-const FEATURED_SERVICES = REAL_SERVICES.slice(0, 8);
+import { useEffect } from "react";
 
 export default function HomePage() {
   const navigate = useNavigate();
-  const [reviews, setReviews] = useState<Review[]>([]);
+  const { data: reviews = [] } = useReviews();
+  const { data: services = [] } = useServices();
+  const { data: bannerImage = "" } = useBannerImage();
+  const { data: employees = [] } = useEmployees();
+  const { data: logo = "" } = useLogo();
 
   useEffect(() => {
     document.title = "ID&PC Chak - Ihsan Designing & Printing Center";
-    setReviews(getReviews());
   }, []);
+
+  const featuredServices = services.slice(0, 8);
 
   return (
     <main>
       {/* Hero Section */}
       <section
-        className="relative min-h-[85vh] flex items-center"
+        className="relative min-h-[85vh] flex items-center depth-hero"
         style={{
-          backgroundImage: `url('${LOGO}')`,
+          backgroundImage: bannerImage ? `url('${bannerImage}')` : undefined,
           backgroundSize: "cover",
           backgroundPosition: "center",
         }}
@@ -134,18 +48,20 @@ export default function HomePage() {
         <div className="absolute inset-0 bg-brand-blue/88" />
         <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
           <div className="max-w-2xl">
-            {/* Logo displayed prominently in hero */}
-            <div className="mb-6">
-              <img
-                src={LOGO}
-                alt="Ihsan Designing & Printing Center Chak"
-                className="h-20 w-auto object-contain"
-              />
-            </div>
+            {/* Logo — loaded from backend so it updates when admin changes it */}
+            {logo && (
+              <div className="mb-6">
+                <img
+                  src={logo}
+                  alt="Ihsan Designing & Printing Center Chak"
+                  className="h-20 w-auto object-contain"
+                />
+              </div>
+            )}
             <p className="text-brand-gold font-semibold text-sm uppercase tracking-widest mb-4 animate-fade-in-up">
               Welcome to ID&PC Chak
             </p>
-            <h1 className="font-heading font-bold text-4xl sm:text-5xl lg:text-6xl text-brand-gold leading-tight mb-6 animate-fade-in-up animate-delay-100">
+            <h1 className="font-heading font-bold text-4xl sm:text-5xl lg:text-6xl text-brand-gold leading-tight mb-6 animate-fade-in-up animate-delay-100 text-shadow-hero">
               Premier Designing &<br />
               Printing Services
               <br />
@@ -163,17 +79,39 @@ export default function HomePage() {
                     .getElementById("services")
                     ?.scrollIntoView({ behavior: "smooth" })
                 }
-                className="bg-brand-gold text-brand-blue hover:bg-brand-gold-dark font-semibold px-8 h-12 rounded-full text-base"
+                className="bg-brand-gold text-brand-blue hover:bg-brand-gold-dark font-semibold px-8 h-12 rounded-full text-base btn-3d btn-3d-gold"
               >
                 View Our Services <ArrowRight className="w-4 h-4 ml-2" />
               </Button>
               <Button
                 onClick={() => navigate({ to: "/contact" })}
                 variant="outline"
-                className="border-white text-white hover:bg-white/10 px-8 h-12 rounded-full text-base"
+                className="border-white text-white hover:bg-white/10 px-8 h-12 rounded-full text-base btn-3d"
               >
                 Contact Us
               </Button>
+            </div>
+
+            {/* Stats Strip */}
+            <div className="flex flex-wrap gap-6 mt-10">
+              <div className="flex items-center gap-2 text-white/80">
+                <Tag className="w-5 h-5 text-brand-gold" />
+                <span className="font-semibold">
+                  {services.length}+ Services
+                </span>
+              </div>
+              {employees.length > 0 && (
+                <div className="flex items-center gap-2 text-white/80">
+                  <Users className="w-5 h-5 text-brand-gold" />
+                  <span className="font-semibold">
+                    {employees.length} Team Members
+                  </span>
+                </div>
+              )}
+              <div className="flex items-center gap-2 text-white/80">
+                <Star className="w-5 h-5 text-brand-gold fill-brand-gold" />
+                <span className="font-semibold">Since 2015</span>
+              </div>
             </div>
           </div>
         </div>
@@ -190,46 +128,55 @@ export default function HomePage() {
               Our Services
             </h2>
             <p className="text-muted-foreground mt-3 max-w-xl mx-auto">
-              We provide 15+ professional printing and designing services — from
-              visiting cards to panaflex banners, photo studio to T-shirt
-              printing.
+              We provide {services.length}+ professional printing and designing
+              services — from visiting cards to panaflex banners, photo studio
+              to T-shirt printing.
             </p>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-            {FEATURED_SERVICES.map((svc, i) => (
+            {featuredServices.map((svc, i) => (
               <Card
-                key={svc.title}
-                className="border-2 border-border hover:border-brand-blue-mid shadow-card hover:shadow-card-hover transition-all duration-300 group animate-fade-in-up"
+                key={svc.id}
+                className="border-2 border-border hover:border-brand-blue-mid shadow-card hover:shadow-card-hover transition-all duration-300 group animate-fade-in-up card-3d card-3d-gold"
                 style={{ animationDelay: `${i * 0.08}s`, opacity: 0 }}
               >
-                <CardContent className="p-6 text-center">
+                <CardContent className="p-6 flex flex-col h-full">
                   <div className="text-4xl mb-4 group-hover:scale-110 transition-transform inline-block">
                     {svc.icon}
                   </div>
                   <h3 className="font-heading font-bold text-lg text-brand-blue mb-2">
-                    {svc.title}
+                    {svc.name}
                   </h3>
-                  <p className="text-muted-foreground text-sm leading-relaxed mb-4">
+                  <p className="text-muted-foreground text-sm leading-relaxed mb-3 flex-1">
                     {svc.description}
                   </p>
+                  {/* Price Badge */}
+                  <div className="mb-3">
+                    <span className="inline-flex items-center gap-1 bg-brand-gold/10 text-brand-gold border border-brand-gold/30 px-2 py-1 rounded-full text-xs font-bold">
+                      <Tag className="w-3 h-3" /> {svc.price}
+                    </span>
+                  </div>
                   <Link
                     to="/products"
-                    className="text-brand-gold font-semibold text-sm hover:underline inline-flex items-center gap-1"
+                    className="text-brand-blue font-semibold text-sm hover:underline inline-flex items-center gap-1"
                   >
-                    Learn More <ChevronRight className="w-3 h-3" />
+                    View Details <ChevronRight className="w-3 h-3" />
                   </Link>
                 </CardContent>
               </Card>
             ))}
           </div>
-          <div className="text-center mt-8">
-            <Button
-              onClick={() => navigate({ to: "/products" })}
-              className="bg-brand-blue text-white hover:bg-brand-blue-dark"
-            >
-              View All 15 Services <ChevronRight className="w-4 h-4 ml-1" />
-            </Button>
-          </div>
+          {services.length > 8 && (
+            <div className="text-center mt-8">
+              <Button
+                onClick={() => navigate({ to: "/products" })}
+                className="bg-brand-blue text-white hover:bg-brand-blue-dark"
+              >
+                View All {services.length} Services{" "}
+                <ChevronRight className="w-4 h-4 ml-1" />
+              </Button>
+            </div>
+          )}
         </div>
       </section>
 
@@ -237,7 +184,7 @@ export default function HomePage() {
       <section className="py-20 bg-muted/50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            <Card className="border-2 border-brand-blue-mid shadow-card">
+            <Card className="border-2 border-brand-blue-mid shadow-card card-3d">
               <CardContent className="p-6">
                 <h3 className="font-heading font-bold text-lg text-brand-blue mb-1">
                   Customer Portal
@@ -247,14 +194,13 @@ export default function HomePage() {
                 </p>
                 <Button
                   onClick={() => navigate({ to: "/bill-check" })}
-                  className="w-full bg-brand-gold text-brand-blue hover:bg-brand-gold-dark font-semibold"
+                  className="w-full bg-brand-gold text-brand-blue hover:bg-brand-gold-dark font-semibold btn-3d btn-3d-gold"
                 >
                   Check My Bill
                 </Button>
               </CardContent>
             </Card>
-
-            <Card className="border-2 border-brand-red/30 shadow-card bg-brand-red/5">
+            <Card className="border-2 border-brand-red/30 shadow-card bg-brand-red/5 card-3d">
               <CardContent className="p-6 space-y-2">
                 <h3 className="font-heading font-bold text-lg text-brand-red mb-2">
                   Contact Info
@@ -283,7 +229,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* Reviews Section — shows only admin-added reviews */}
+      {/* Reviews Section */}
       {reviews.length > 0 && (
         <section className="py-20 bg-background">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -299,7 +245,7 @@ export default function HomePage() {
               {reviews.map((r, i) => (
                 <Card
                   key={r.id}
-                  className="border-2 border-border shadow-card animate-fade-in-up"
+                  className="border-2 border-border shadow-card animate-fade-in-up card-3d"
                   style={{ animationDelay: `${i * 0.1}s`, opacity: 0 }}
                 >
                   <CardContent className="p-6">

@@ -10,7 +10,122 @@ import type { ActorMethod } from '@icp-sdk/core/agent';
 import type { IDL } from '@icp-sdk/core/candid';
 import type { Principal } from '@icp-sdk/core/principal';
 
-export interface _SERVICE {}
+export interface ContactMessage {
+  'id' : bigint,
+  'date' : string,
+  'name' : string,
+  'isRead' : boolean,
+  'message' : string,
+  'phone' : string,
+}
+export interface CustomerOrder {
+  'id' : bigint,
+  'customerName' : string,
+  'date' : string,
+  'invoiceId' : bigint,
+  'isPaid' : boolean,
+  'orderType' : string,
+  'orderedItems' : Array<[string, bigint]>,
+  'amountPaid' : bigint,
+}
+export interface Employee {
+  'id' : bigint,
+  'salary' : bigint,
+  'cnic' : string,
+  'fullName' : string,
+  'jobTitle' : string,
+  'address' : string,
+  'phone' : string,
+  'photo' : ExternalBlob,
+  'department' : string,
+}
+export type ExternalBlob = Uint8Array;
+export interface Invoice {
+  'id' : bigint,
+  'customerName' : string,
+  'date' : string,
+  'totalAmount' : bigint,
+  'items' : Array<[string, bigint]>,
+}
+export interface Review {
+  'id' : bigint,
+  'customerName' : string,
+  'review' : string,
+  'date' : string,
+  'rating' : bigint,
+}
+export interface Service {
+  'id' : bigint,
+  'icon' : string,
+  'name' : string,
+  'description' : string,
+  'image' : ExternalBlob,
+  'price' : string,
+}
+export interface _CaffeineStorageCreateCertificateResult {
+  'method' : string,
+  'blob_hash' : string,
+}
+export interface _CaffeineStorageRefillInformation {
+  'proposed_top_up_amount' : [] | [bigint],
+}
+export interface _CaffeineStorageRefillResult {
+  'success' : [] | [boolean],
+  'topped_up_amount' : [] | [bigint],
+}
+export interface _SERVICE {
+  '_caffeineStorageBlobIsLive' : ActorMethod<[Uint8Array], boolean>,
+  '_caffeineStorageBlobsToDelete' : ActorMethod<[], Array<Uint8Array>>,
+  '_caffeineStorageConfirmBlobDeletion' : ActorMethod<
+    [Array<Uint8Array>],
+    undefined
+  >,
+  '_caffeineStorageCreateCertificate' : ActorMethod<
+    [string],
+    _CaffeineStorageCreateCertificateResult
+  >,
+  '_caffeineStorageRefillCashier' : ActorMethod<
+    [[] | [_CaffeineStorageRefillInformation]],
+    _CaffeineStorageRefillResult
+  >,
+  '_caffeineStorageUpdateGatewayPrincipals' : ActorMethod<[], undefined>,
+  'createContactMessage' : ActorMethod<[ContactMessage], undefined>,
+  'createCustomerOrder' : ActorMethod<[CustomerOrder], undefined>,
+  'createEmployee' : ActorMethod<[Employee], undefined>,
+  'createInvoice' : ActorMethod<[Invoice], undefined>,
+  'createReview' : ActorMethod<[Review], undefined>,
+  'createService' : ActorMethod<[Service], undefined>,
+  'deleteContactMessage' : ActorMethod<[bigint], undefined>,
+  'deleteCustomerOrder' : ActorMethod<[bigint], undefined>,
+  'deleteEmployee' : ActorMethod<[bigint], undefined>,
+  'deleteInvoice' : ActorMethod<[bigint], undefined>,
+  'deleteReview' : ActorMethod<[bigint], undefined>,
+  'deleteService' : ActorMethod<[bigint], undefined>,
+  'getAdminPassword' : ActorMethod<[], string>,
+  'getAllContactMessages' : ActorMethod<[], Array<ContactMessage>>,
+  'getAllCustomerOrders' : ActorMethod<[], Array<CustomerOrder>>,
+  'getAllEmployees' : ActorMethod<[], Array<Employee>>,
+  'getAllInvoices' : ActorMethod<[], Array<Invoice>>,
+  'getAllReviews' : ActorMethod<[], Array<Review>>,
+  'getAllServices' : ActorMethod<[], Array<Service>>,
+  'getBannerImage' : ActorMethod<[], ExternalBlob>,
+  'getContactMessage' : ActorMethod<[bigint], [] | [ContactMessage]>,
+  'getCustomerOrder' : ActorMethod<[bigint], [] | [CustomerOrder]>,
+  'getEmployee' : ActorMethod<[bigint], [] | [Employee]>,
+  'getInvoice' : ActorMethod<[bigint], [] | [Invoice]>,
+  'getLogo' : ActorMethod<[], string>,
+  'getReview' : ActorMethod<[bigint], [] | [Review]>,
+  'getService' : ActorMethod<[bigint], [] | [Service]>,
+  'setAdminPassword' : ActorMethod<[string], undefined>,
+  'setBannerImage' : ActorMethod<[ExternalBlob], undefined>,
+  'setLogo' : ActorMethod<[string], undefined>,
+  'updateContactMessage' : ActorMethod<[bigint, ContactMessage], undefined>,
+  'updateCustomerOrder' : ActorMethod<[bigint, CustomerOrder], undefined>,
+  'updateEmployee' : ActorMethod<[bigint, Employee], undefined>,
+  'updateInvoice' : ActorMethod<[bigint, Invoice], undefined>,
+  'updateReview' : ActorMethod<[bigint, Review], undefined>,
+  'updateService' : ActorMethod<[bigint, Service], undefined>,
+}
 export declare const idlService: IDL.ServiceClass;
 export declare const idlInitArgs: IDL.Type[];
 export declare const idlFactory: IDL.InterfaceFactory;

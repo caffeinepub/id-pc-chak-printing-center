@@ -3,7 +3,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { type Invoice, findInvoice } from "@/lib/storage";
+import { useInvoices } from "@/hooks/useQueries";
+import type { Invoice } from "@/lib/storage";
 import { AlertCircle, Info, Search } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -13,6 +14,7 @@ export default function BillCheckPage() {
   const [invoice, setInvoice] = useState<Invoice | null>(null);
   const [searched, setSearched] = useState(false);
   const [loading, setLoading] = useState(false);
+  const { data: invoices = [] } = useInvoices();
 
   useEffect(() => {
     document.title = "Check Bill - ID&PC Chak";
@@ -22,7 +24,13 @@ export default function BillCheckPage() {
     e.preventDefault();
     setLoading(true);
     setTimeout(() => {
-      const found = findInvoice(userId.trim(), billNo.trim());
+      const uid = userId.trim().toLowerCase();
+      const bid = billNo.trim().toLowerCase();
+      const found =
+        invoices.find(
+          (inv) =>
+            inv.userId.toLowerCase() === uid && inv.id.toLowerCase() === bid,
+        ) ?? null;
       setInvoice(found);
       setSearched(true);
       setLoading(false);

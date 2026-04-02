@@ -3,6 +3,9 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { useActor } from "@/hooks/useActor";
+import { useInvalidate } from "@/hooks/useQueries";
+import { backendAddContactMessage } from "@/lib/backendData";
 import { saveMessage } from "@/lib/storage";
 import { CheckCircle, Clock, Mail, MapPin, Phone } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -11,6 +14,9 @@ export default function ContactPage() {
   const [form, setForm] = useState({ name: "", phone: "", message: "" });
   const [submitted, setSubmitted] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [submitting, setSubmitting] = useState(false);
+  const { actor } = useActor();
+  const invalidate = useInvalidate();
 
   useEffect(() => {
     document.title = "Contact Us - ID&PC Chak";
@@ -24,17 +30,32 @@ export default function ContactPage() {
     return errs;
   }
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     const errs = validate();
     if (Object.keys(errs).length > 0) {
       setErrors(errs);
       return;
     }
-    saveMessage(form);
-    setSubmitted(true);
-    setForm({ name: "", phone: "", message: "" });
-    setErrors({});
+    setSubmitting(true);
+    try {
+      // Save to localStorage
+      saveMessage(form);
+      // Save to backend
+      await backendAddContactMessage(actor, form);
+      invalidate(["contactMessages"]);
+      setSubmitted(true);
+      setForm({ name: "", phone: "", message: "" });
+      setErrors({});
+    } catch (err) {
+      console.error("Contact form submit error", err);
+      // Still show success since local save worked
+      setSubmitted(true);
+      setForm({ name: "", phone: "", message: "" });
+      setErrors({});
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -226,10 +247,11 @@ export default function ContactPage() {
                     </div>
                     <Button
                       type="submit"
+                      disabled={submitting}
                       className="w-full bg-brand-blue text-white hover:bg-brand-blue-dark font-semibold h-12"
                       data-ocid="contact.submit_button"
                     >
-                      Send Message
+                      {submitting ? "Sending..." : "Send Message"}
                     </Button>
                   </form>
                 )}

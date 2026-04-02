@@ -8,10 +8,266 @@
 
 import { IDL } from '@icp-sdk/core/candid';
 
-export const idlService = IDL.Service({});
+export const _CaffeineStorageCreateCertificateResult = IDL.Record({
+  'method' : IDL.Text,
+  'blob_hash' : IDL.Text,
+});
+export const _CaffeineStorageRefillInformation = IDL.Record({
+  'proposed_top_up_amount' : IDL.Opt(IDL.Nat),
+});
+export const _CaffeineStorageRefillResult = IDL.Record({
+  'success' : IDL.Opt(IDL.Bool),
+  'topped_up_amount' : IDL.Opt(IDL.Nat),
+});
+export const ContactMessage = IDL.Record({
+  'id' : IDL.Nat,
+  'date' : IDL.Text,
+  'name' : IDL.Text,
+  'isRead' : IDL.Bool,
+  'message' : IDL.Text,
+  'phone' : IDL.Text,
+});
+export const CustomerOrder = IDL.Record({
+  'id' : IDL.Nat,
+  'customerName' : IDL.Text,
+  'date' : IDL.Text,
+  'invoiceId' : IDL.Nat,
+  'isPaid' : IDL.Bool,
+  'orderType' : IDL.Text,
+  'orderedItems' : IDL.Vec(IDL.Tuple(IDL.Text, IDL.Nat)),
+  'amountPaid' : IDL.Nat,
+});
+export const ExternalBlob = IDL.Vec(IDL.Nat8);
+export const Employee = IDL.Record({
+  'id' : IDL.Nat,
+  'salary' : IDL.Nat,
+  'cnic' : IDL.Text,
+  'fullName' : IDL.Text,
+  'jobTitle' : IDL.Text,
+  'address' : IDL.Text,
+  'phone' : IDL.Text,
+  'photo' : ExternalBlob,
+  'department' : IDL.Text,
+});
+export const Invoice = IDL.Record({
+  'id' : IDL.Nat,
+  'customerName' : IDL.Text,
+  'date' : IDL.Text,
+  'totalAmount' : IDL.Nat,
+  'items' : IDL.Vec(IDL.Tuple(IDL.Text, IDL.Nat)),
+});
+export const Review = IDL.Record({
+  'id' : IDL.Nat,
+  'customerName' : IDL.Text,
+  'review' : IDL.Text,
+  'date' : IDL.Text,
+  'rating' : IDL.Nat,
+});
+export const Service = IDL.Record({
+  'id' : IDL.Nat,
+  'icon' : IDL.Text,
+  'name' : IDL.Text,
+  'description' : IDL.Text,
+  'image' : ExternalBlob,
+  'price' : IDL.Text,
+});
+
+export const idlService = IDL.Service({
+  '_caffeineStorageBlobIsLive' : IDL.Func(
+      [IDL.Vec(IDL.Nat8)],
+      [IDL.Bool],
+      ['query'],
+    ),
+  '_caffeineStorageBlobsToDelete' : IDL.Func(
+      [],
+      [IDL.Vec(IDL.Vec(IDL.Nat8))],
+      ['query'],
+    ),
+  '_caffeineStorageConfirmBlobDeletion' : IDL.Func(
+      [IDL.Vec(IDL.Vec(IDL.Nat8))],
+      [],
+      [],
+    ),
+  '_caffeineStorageCreateCertificate' : IDL.Func(
+      [IDL.Text],
+      [_CaffeineStorageCreateCertificateResult],
+      [],
+    ),
+  '_caffeineStorageRefillCashier' : IDL.Func(
+      [IDL.Opt(_CaffeineStorageRefillInformation)],
+      [_CaffeineStorageRefillResult],
+      [],
+    ),
+  '_caffeineStorageUpdateGatewayPrincipals' : IDL.Func([], [], []),
+  'createContactMessage' : IDL.Func([ContactMessage], [], []),
+  'createCustomerOrder' : IDL.Func([CustomerOrder], [], []),
+  'createEmployee' : IDL.Func([Employee], [], []),
+  'createInvoice' : IDL.Func([Invoice], [], []),
+  'createReview' : IDL.Func([Review], [], []),
+  'createService' : IDL.Func([Service], [], []),
+  'deleteContactMessage' : IDL.Func([IDL.Nat], [], []),
+  'deleteCustomerOrder' : IDL.Func([IDL.Nat], [], []),
+  'deleteEmployee' : IDL.Func([IDL.Nat], [], []),
+  'deleteInvoice' : IDL.Func([IDL.Nat], [], []),
+  'deleteReview' : IDL.Func([IDL.Nat], [], []),
+  'deleteService' : IDL.Func([IDL.Nat], [], []),
+  'getAdminPassword' : IDL.Func([], [IDL.Text], []),
+  'getAllContactMessages' : IDL.Func([], [IDL.Vec(ContactMessage)], []),
+  'getAllCustomerOrders' : IDL.Func([], [IDL.Vec(CustomerOrder)], []),
+  'getAllEmployees' : IDL.Func([], [IDL.Vec(Employee)], []),
+  'getAllInvoices' : IDL.Func([], [IDL.Vec(Invoice)], []),
+  'getAllReviews' : IDL.Func([], [IDL.Vec(Review)], []),
+  'getAllServices' : IDL.Func([], [IDL.Vec(Service)], []),
+  'getBannerImage' : IDL.Func([], [ExternalBlob], []),
+  'getContactMessage' : IDL.Func([IDL.Nat], [IDL.Opt(ContactMessage)], []),
+  'getCustomerOrder' : IDL.Func([IDL.Nat], [IDL.Opt(CustomerOrder)], []),
+  'getEmployee' : IDL.Func([IDL.Nat], [IDL.Opt(Employee)], []),
+  'getInvoice' : IDL.Func([IDL.Nat], [IDL.Opt(Invoice)], []),
+  'getLogo' : IDL.Func([], [IDL.Text], []),
+  'getReview' : IDL.Func([IDL.Nat], [IDL.Opt(Review)], []),
+  'getService' : IDL.Func([IDL.Nat], [IDL.Opt(Service)], []),
+  'setAdminPassword' : IDL.Func([IDL.Text], [], []),
+  'setBannerImage' : IDL.Func([ExternalBlob], [], []),
+  'setLogo' : IDL.Func([IDL.Text], [], []),
+  'updateContactMessage' : IDL.Func([IDL.Nat, ContactMessage], [], []),
+  'updateCustomerOrder' : IDL.Func([IDL.Nat, CustomerOrder], [], []),
+  'updateEmployee' : IDL.Func([IDL.Nat, Employee], [], []),
+  'updateInvoice' : IDL.Func([IDL.Nat, Invoice], [], []),
+  'updateReview' : IDL.Func([IDL.Nat, Review], [], []),
+  'updateService' : IDL.Func([IDL.Nat, Service], [], []),
+});
 
 export const idlInitArgs = [];
 
-export const idlFactory = ({ IDL }) => { return IDL.Service({}); };
+export const idlFactory = ({ IDL }) => {
+  const _CaffeineStorageCreateCertificateResult = IDL.Record({
+    'method' : IDL.Text,
+    'blob_hash' : IDL.Text,
+  });
+  const _CaffeineStorageRefillInformation = IDL.Record({
+    'proposed_top_up_amount' : IDL.Opt(IDL.Nat),
+  });
+  const _CaffeineStorageRefillResult = IDL.Record({
+    'success' : IDL.Opt(IDL.Bool),
+    'topped_up_amount' : IDL.Opt(IDL.Nat),
+  });
+  const ContactMessage = IDL.Record({
+    'id' : IDL.Nat,
+    'date' : IDL.Text,
+    'name' : IDL.Text,
+    'isRead' : IDL.Bool,
+    'message' : IDL.Text,
+    'phone' : IDL.Text,
+  });
+  const CustomerOrder = IDL.Record({
+    'id' : IDL.Nat,
+    'customerName' : IDL.Text,
+    'date' : IDL.Text,
+    'invoiceId' : IDL.Nat,
+    'isPaid' : IDL.Bool,
+    'orderType' : IDL.Text,
+    'orderedItems' : IDL.Vec(IDL.Tuple(IDL.Text, IDL.Nat)),
+    'amountPaid' : IDL.Nat,
+  });
+  const ExternalBlob = IDL.Vec(IDL.Nat8);
+  const Employee = IDL.Record({
+    'id' : IDL.Nat,
+    'salary' : IDL.Nat,
+    'cnic' : IDL.Text,
+    'fullName' : IDL.Text,
+    'jobTitle' : IDL.Text,
+    'address' : IDL.Text,
+    'phone' : IDL.Text,
+    'photo' : ExternalBlob,
+    'department' : IDL.Text,
+  });
+  const Invoice = IDL.Record({
+    'id' : IDL.Nat,
+    'customerName' : IDL.Text,
+    'date' : IDL.Text,
+    'totalAmount' : IDL.Nat,
+    'items' : IDL.Vec(IDL.Tuple(IDL.Text, IDL.Nat)),
+  });
+  const Review = IDL.Record({
+    'id' : IDL.Nat,
+    'customerName' : IDL.Text,
+    'review' : IDL.Text,
+    'date' : IDL.Text,
+    'rating' : IDL.Nat,
+  });
+  const Service = IDL.Record({
+    'id' : IDL.Nat,
+    'icon' : IDL.Text,
+    'name' : IDL.Text,
+    'description' : IDL.Text,
+    'image' : ExternalBlob,
+    'price' : IDL.Text,
+  });
+  
+  return IDL.Service({
+    '_caffeineStorageBlobIsLive' : IDL.Func(
+        [IDL.Vec(IDL.Nat8)],
+        [IDL.Bool],
+        ['query'],
+      ),
+    '_caffeineStorageBlobsToDelete' : IDL.Func(
+        [],
+        [IDL.Vec(IDL.Vec(IDL.Nat8))],
+        ['query'],
+      ),
+    '_caffeineStorageConfirmBlobDeletion' : IDL.Func(
+        [IDL.Vec(IDL.Vec(IDL.Nat8))],
+        [],
+        [],
+      ),
+    '_caffeineStorageCreateCertificate' : IDL.Func(
+        [IDL.Text],
+        [_CaffeineStorageCreateCertificateResult],
+        [],
+      ),
+    '_caffeineStorageRefillCashier' : IDL.Func(
+        [IDL.Opt(_CaffeineStorageRefillInformation)],
+        [_CaffeineStorageRefillResult],
+        [],
+      ),
+    '_caffeineStorageUpdateGatewayPrincipals' : IDL.Func([], [], []),
+    'createContactMessage' : IDL.Func([ContactMessage], [], []),
+    'createCustomerOrder' : IDL.Func([CustomerOrder], [], []),
+    'createEmployee' : IDL.Func([Employee], [], []),
+    'createInvoice' : IDL.Func([Invoice], [], []),
+    'createReview' : IDL.Func([Review], [], []),
+    'createService' : IDL.Func([Service], [], []),
+    'deleteContactMessage' : IDL.Func([IDL.Nat], [], []),
+    'deleteCustomerOrder' : IDL.Func([IDL.Nat], [], []),
+    'deleteEmployee' : IDL.Func([IDL.Nat], [], []),
+    'deleteInvoice' : IDL.Func([IDL.Nat], [], []),
+    'deleteReview' : IDL.Func([IDL.Nat], [], []),
+    'deleteService' : IDL.Func([IDL.Nat], [], []),
+    'getAdminPassword' : IDL.Func([], [IDL.Text], []),
+    'getAllContactMessages' : IDL.Func([], [IDL.Vec(ContactMessage)], []),
+    'getAllCustomerOrders' : IDL.Func([], [IDL.Vec(CustomerOrder)], []),
+    'getAllEmployees' : IDL.Func([], [IDL.Vec(Employee)], []),
+    'getAllInvoices' : IDL.Func([], [IDL.Vec(Invoice)], []),
+    'getAllReviews' : IDL.Func([], [IDL.Vec(Review)], []),
+    'getAllServices' : IDL.Func([], [IDL.Vec(Service)], []),
+    'getBannerImage' : IDL.Func([], [ExternalBlob], []),
+    'getContactMessage' : IDL.Func([IDL.Nat], [IDL.Opt(ContactMessage)], []),
+    'getCustomerOrder' : IDL.Func([IDL.Nat], [IDL.Opt(CustomerOrder)], []),
+    'getEmployee' : IDL.Func([IDL.Nat], [IDL.Opt(Employee)], []),
+    'getInvoice' : IDL.Func([IDL.Nat], [IDL.Opt(Invoice)], []),
+    'getLogo' : IDL.Func([], [IDL.Text], []),
+    'getReview' : IDL.Func([IDL.Nat], [IDL.Opt(Review)], []),
+    'getService' : IDL.Func([IDL.Nat], [IDL.Opt(Service)], []),
+    'setAdminPassword' : IDL.Func([IDL.Text], [], []),
+    'setBannerImage' : IDL.Func([ExternalBlob], [], []),
+    'setLogo' : IDL.Func([IDL.Text], [], []),
+    'updateContactMessage' : IDL.Func([IDL.Nat, ContactMessage], [], []),
+    'updateCustomerOrder' : IDL.Func([IDL.Nat, CustomerOrder], [], []),
+    'updateEmployee' : IDL.Func([IDL.Nat, Employee], [], []),
+    'updateInvoice' : IDL.Func([IDL.Nat, Invoice], [], []),
+    'updateReview' : IDL.Func([IDL.Nat, Review], [], []),
+    'updateService' : IDL.Func([IDL.Nat, Service], [], []),
+  });
+};
 
 export const init = ({ IDL }) => { return []; };

@@ -7,17 +7,24 @@
  */
 
 import {
+  fetchAboutStats,
+  fetchApprovedReviews,
   fetchBannerImage,
+  fetchBillingItems,
   fetchContactMessages,
   fetchEmployees,
   fetchInvoices,
   fetchLogo,
   fetchOrders,
+  fetchPendingReviews,
   fetchReviews,
   fetchServices,
 } from "@/lib/backendData";
 import {
+  type BillingItem,
+  type Review,
   getBannerImage,
+  getBillingItems,
   getContactMessages,
   getEmployees,
   getInvoices,
@@ -97,6 +104,33 @@ export function useReviews() {
   });
 }
 
+export function useApprovedReviews() {
+  const { actor, isFetching } = useActor();
+  return useQuery<Review[]>({
+    queryKey: ["approvedReviews"],
+    queryFn: () => fetchApprovedReviews(actor),
+    enabled: !isFetching,
+    initialData: () =>
+      getReviews().filter((r) => !r.status || r.status === "approved"),
+    staleTime: 0,
+    refetchInterval: POLL_INTERVAL,
+    refetchIntervalInBackground: true,
+  });
+}
+
+export function usePendingReviews() {
+  const { actor, isFetching } = useActor();
+  return useQuery<Review[]>({
+    queryKey: ["pendingReviews"],
+    queryFn: () => fetchPendingReviews(actor),
+    enabled: !isFetching,
+    initialData: () => getReviews().filter((r) => r.status === "pending"),
+    staleTime: 0,
+    refetchInterval: POLL_INTERVAL,
+    refetchIntervalInBackground: true,
+  });
+}
+
 export function useInvoices() {
   const { actor, isFetching } = useActor();
   return useQuery({
@@ -130,6 +164,35 @@ export function useContactMessages() {
     queryFn: () => fetchContactMessages(actor),
     enabled: !isFetching,
     initialData: getContactMessages,
+    staleTime: 0,
+    refetchInterval: POLL_INTERVAL,
+    refetchIntervalInBackground: true,
+  });
+}
+
+export function useBillingItems() {
+  const { actor, isFetching } = useActor();
+  return useQuery<BillingItem[]>({
+    queryKey: ["billingItems"],
+    queryFn: () => fetchBillingItems(actor),
+    enabled: !isFetching,
+    initialData: getBillingItems,
+    staleTime: 0,
+    refetchInterval: POLL_INTERVAL,
+    refetchIntervalInBackground: true,
+  });
+}
+
+export function useAboutStats() {
+  const { actor, isFetching } = useActor();
+  return useQuery({
+    queryKey: ["aboutStats"],
+    queryFn: () => fetchAboutStats(actor),
+    enabled: !isFetching,
+    initialData: () => ({
+      yearsExperience: localStorage.getItem("idpc_years_experience") || "10+",
+      numClients: localStorage.getItem("idpc_num_clients") || "1000+",
+    }),
     staleTime: 0,
     refetchInterval: POLL_INTERVAL,
     refetchIntervalInBackground: true,

@@ -1,8 +1,7 @@
 import { Badge } from "@/components/ui/badge";
-import { Card } from "@/components/ui/card";
 import { useServices } from "@/hooks/useQueries";
 import { Link } from "@tanstack/react-router";
-import { ArrowRight, Tag } from "lucide-react";
+import { ArrowRight, PackageX, Tag } from "lucide-react";
 import { useEffect } from "react";
 
 export default function ProductsPage() {
@@ -24,69 +23,142 @@ export default function ProductsPage() {
             All Services
           </h1>
           <p className="text-muted-foreground max-w-xl mx-auto">
-            We offer {services.length}+ professional printing and designing
-            services. Click any service to view details and place an order.
+            We offer {services.length > 0 ? `${services.length}+` : "15+"}{" "}
+            professional printing and designing services. Click any service to
+            view details and place an order.
           </p>
-          <Badge className="mt-3 bg-brand-gold/20 text-brand-blue border-brand-gold/40">
-            💡 Click a service below to view details & order
-          </Badge>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          {services.map((svc, i) => (
-            <Link
-              key={svc.id}
-              to="/products/$serviceId"
-              params={{ serviceId: svc.id }}
-              className="block group"
-              data-ocid={`products.item.${i + 1}`}
-            >
-              <Card
-                className="border-2 border-border hover:border-brand-blue-mid shadow-card transition-all animate-fade-in-up card-3d h-full cursor-pointer group-hover:shadow-lg overflow-hidden"
-                style={{ animationDelay: `${i * 0.06}s`, opacity: 0 }}
+          {services.map((svc, i) => {
+            const discountPct =
+              svc.discount && svc.discount > 0 ? svc.discount : 0;
+            const isInStock = svc.inStock !== false;
+
+            // Parse numeric price for discount calculation
+            const parsedPrice = svc.price
+              ? (() => {
+                  const match = svc.price.match(/[\d,]+/);
+                  if (!match) return null;
+                  return Number.parseInt(match[0].replace(/,/g, ""), 10);
+                })()
+              : null;
+            const finalPrice =
+              parsedPrice && discountPct > 0
+                ? Math.round(parsedPrice * (1 - discountPct / 100))
+                : null;
+
+            return (
+              <Link
+                key={svc.id}
+                to="/products/$serviceId"
+                params={{ serviceId: svc.id }}
+                className="block group"
+                data-ocid={`products.item.${i + 1}`}
               >
-                {/* Product image if available */}
-                {svc.image ? (
-                  <div className="relative">
-                    <img
-                      src={svc.image}
-                      alt={svc.name}
-                      className="w-full h-32 object-cover"
-                    />
-                    <span className="absolute top-2 right-2 text-2xl">
-                      {svc.icon}
+                <div
+                  className="relative rounded-2xl overflow-hidden border-2 border-border bg-card shadow-card card-3d transition-all animate-fade-in-up cursor-pointer"
+                  style={{ animationDelay: `${i * 0.06}s`, opacity: 0 }}
+                >
+                  {/* Stock / Discount badges row */}
+                  <div className="absolute top-3 left-3 z-10 flex gap-2">
+                    <span
+                      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold shadow-sm ${
+                        isInStock
+                          ? "bg-green-500 text-white"
+                          : "bg-red-500 text-white"
+                      }`}
+                    >
+                      {isInStock ? (
+                        <span className="inline-block w-1.5 h-1.5 rounded-full bg-white mr-0.5" />
+                      ) : (
+                        <PackageX className="w-3 h-3 mr-0.5" />
+                      )}
+                      {isInStock ? "In Stock" : "Sold Out"}
                     </span>
-                  </div>
-                ) : null}
-                <div className="p-6 flex flex-col h-full">
-                  <div className="flex items-start gap-4 flex-1">
-                    {!svc.image && (
-                      <span className="text-4xl flex-shrink-0">{svc.icon}</span>
+                    {discountPct > 0 && (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-brand-red text-white shadow-sm">
+                        {discountPct}% OFF
+                      </span>
                     )}
-                    <div className="flex-1">
-                      <h3 className="font-heading font-bold text-lg text-brand-blue mb-1">
-                        {svc.name}
-                      </h3>
-                      <p className="text-muted-foreground text-sm mb-2">
-                        {svc.description}
-                      </p>
+                  </div>
+
+                  {/* Image area */}
+                  {svc.image ? (
+                    <div className="relative overflow-hidden h-44">
+                      <img
+                        src={svc.image}
+                        alt={svc.name}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/30 to-transparent" />
+                    </div>
+                  ) : (
+                    <div className="h-32 bg-gradient-to-br from-brand-blue/10 to-brand-gold/10 flex items-center justify-center">
+                      <span className="text-5xl group-hover:scale-110 transition-transform duration-300">
+                        {svc.icon}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Content area */}
+                  <div className="p-5">
+                    <h3 className="font-heading font-bold text-lg text-brand-blue leading-tight mb-3">
+                      {svc.name}
+                    </h3>
+
+                    {/* Price block */}
+                    <div className="space-y-1 mb-4">
                       {svc.price && (
-                        <span className="inline-flex items-center gap-1 bg-brand-gold/10 text-brand-gold border border-brand-gold/30 px-2 py-1 rounded-full text-xs font-bold">
-                          <Tag className="w-3 h-3" /> {svc.price}
-                        </span>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {discountPct > 0 && parsedPrice ? (
+                            <>
+                              <span className="text-muted-foreground line-through text-sm">
+                                Rs {parsedPrice.toLocaleString()}
+                              </span>
+                              <span className="font-bold text-brand-gold text-lg">
+                                Rs {finalPrice?.toLocaleString()}
+                              </span>
+                            </>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 bg-brand-gold/10 text-brand-gold border border-brand-gold/30 px-3 py-1 rounded-full text-sm font-bold">
+                              <Tag className="w-3 h-3" /> {svc.price}
+                            </span>
+                          )}
+                        </div>
                       )}
                     </div>
-                  </div>
-                  <div className="mt-4 pt-4 border-t border-border">
-                    <span className="inline-flex items-center gap-1 text-brand-gold font-semibold text-sm group-hover:gap-2 transition-all">
-                      View & Order <ArrowRight className="w-4 h-4" />
-                    </span>
+
+                    {/* CTA row */}
+                    <div className="flex items-center justify-between pt-3 border-t border-border">
+                      <span
+                        className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
+                          isInStock
+                            ? "bg-green-50 text-green-700"
+                            : "bg-red-50 text-red-600"
+                        }`}
+                      >
+                        {isInStock ? "Available" : "Unavailable"}
+                      </span>
+                      <span className="inline-flex items-center gap-1 text-brand-gold font-semibold text-sm group-hover:gap-2 transition-all">
+                        View Details <ArrowRight className="w-4 h-4" />
+                      </span>
+                    </div>
                   </div>
                 </div>
-              </Card>
-            </Link>
-          ))}
+              </Link>
+            );
+          })}
         </div>
+
+        {services.length === 0 && (
+          <div
+            className="text-center py-16 text-muted-foreground"
+            data-ocid="products.empty_state"
+          >
+            <p className="text-lg">Loading services...</p>
+          </div>
+        )}
 
         {/* Call to action */}
         <div className="mt-16 bg-brand-blue rounded-2xl p-8 text-center text-white">
@@ -100,13 +172,15 @@ export default function ProductsPage() {
           <div className="flex flex-wrap justify-center gap-4">
             <a
               href="tel:+923057855334"
-              className="bg-brand-gold text-brand-blue font-semibold px-6 py-2 rounded-full hover:bg-brand-gold-dark transition-colors"
+              className="bg-brand-gold text-brand-blue font-semibold px-6 py-2 rounded-full hover:bg-brand-gold-dark transition-colors btn-3d btn-3d-gold"
+              data-ocid="products.button"
             >
               📞 Call: +92 305 7855334
             </a>
             <a
               href="mailto:ihsanprintingcnetrechak@gmail.com"
-              className="border border-white text-white px-6 py-2 rounded-full hover:bg-white/10 transition-colors"
+              className="border border-white text-white px-6 py-2 rounded-full hover:bg-white/10 transition-colors btn-3d"
+              data-ocid="products.button"
             >
               ✉️ Email Us
             </a>

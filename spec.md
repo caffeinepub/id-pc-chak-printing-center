@@ -1,50 +1,39 @@
-# ID&PC Chak - OTP-Based Admin Authentication
+# ID&PC Chak - Printing Center
 
 ## Current State
-- Admin login at `/admin` uses username `Kamran911` + password (checked against localStorage / backend `getAdminPassword`).
-- Forgot Password uses 3 security questions at `/admin/reset-password`.
-- No OTP system exists; no rate limiting; no audit logging.
-- Admin session is stored in `sessionStorage.isAdminLoggedIn`.
+Full-stack printing shop website with React/TypeScript frontend and Motoko backend. Current backend supports: logo (text), bannerImage (blob), adminPassword, services (with blob image), employees, reviews, invoices, customerOrders, contactMessages. Frontend has Home, About, Products, Purchase, Contact, Bill Check, Admin Dashboard, Admin Login, Reset Password pages.
+
+Backend already has blob-storage component (for service images, banner), and standard CRUD for all entities.
 
 ## Requested Changes (Diff)
 
 ### Add
-- OTP generation logic (4-digit random code) stored in localStorage with timestamp and expiry (120 seconds)
-- OTP attempt counter (max 3 tries); lockout state after 3 failures
-- Rate limiting: one OTP request per 30 seconds (cooldown timer on resend)
-- Masked phone display: `0303******58` format
-- Audit log in localStorage: records login attempts, OTP sends, OTP successes/failures with timestamps
-- OTP step in Admin Login flow: after correct username+password → show OTP entry screen (simulated — OTP displayed on screen since no SMS API available)
-- OTP-based Forgot Password flow replacing security questions
-- Resend OTP button with 30-second cooldown countdown
-- Single-use OTP: cleared after successful use
-- `src/lib/otp.ts` — OTP utility module
+1. **Product Card Redesign** — New card layout with "In Stock" / "Sold Out" label badge at top, multiple images support (images array on Service), product name/price/discount/finalPrice visible on card, NO description on card. Clicking opens product detail page with full description + order form.
+2. **Stock Status** — Simple toggle on each service: `inStock: Bool`. Admin can toggle In Stock / Sold Out from Services tab.
+3. **Discount on Services** — Add `discount: Nat` (percentage) and `finalPrice: Text` fields to Service type.
+4. **Item Management for Billing** — New `BillingItem` type: id, name, sellingPrice (Nat), purchasePrice (Nat, hidden from invoice), category (Text). CRUD in backend. Admin can add/edit/delete items. While creating invoice, items are auto-suggested via search/dropdown.
+5. **Profit & Reports** — Daily/Weekly/Monthly reports based on invoice data matched against BillingItems. Report shows: total sales, total purchase cost, total profit.
+6. **Reviews with Admin Approval** — Add `status: Text` field to Review (`"pending"` | `"approved"` | `"rejected"`). User-submitted reviews go in as `"pending"`. Admin can approve/reject. Only approved reviews show on About and Product pages.
+7. **About Stats Admin Control** — Add `aboutStats` (experience: Text, clientsCount: Text) to backend. Admin can update from About Stats tab. Already partially implemented (tab exists), needs full backend persistence.
+8. **Order System** — Orders already exist. Ensure auto-generated Order Number (ORD-XXXX format). Admin can view orders and generate invoice from order.
+9. **Reviews on Product Detail Page** — Approved reviews shown on product detail/purchase page.
 
 ### Modify
-- `AdminLoginPage.tsx` — add Step 2 OTP verification after credentials
-- `ResetPasswordPage.tsx` — replace security questions with OTP step
+- Service type: add `inStock: Bool`, `discount: Nat`, images array (keep existing `image` blob for compatibility).
+- Invoice creation: show item suggestions (dropdown from BillingItems), purchase price hidden from invoice output.
+- About page: show approved reviews section. Show experience and clients count from backend.
+- Admin Dashboard: add Items Management tab, add Reports tab (daily/weekly/monthly), Reviews tab shows pending reviews for approval.
+- Products page: new card design with label, discount badge, no description.
 
 ### Remove
-- Security questions from `ResetPasswordPage.tsx`
+- Auto-generated About stats (hardcoded 10 years experience, 1000+ clients) — replace with backend-driven values.
 
 ## Implementation Plan
-1. Create `src/frontend/src/lib/otp.ts` with:
-   - `generateOTP()` → stores 4-digit OTP in localStorage with timestamp, returns the code
-   - `verifyOTP(code)` → checks code, expiry (120s), attempts (max 3); returns `{success, error}`
-   - `canRequestOTP()` → checks 30-second rate limit; returns boolean
-   - `clearOTP()` → removes OTP after successful use
-   - `getOTPCooldownSeconds()` → returns remaining cooldown seconds
-   - `logAuditEvent(event, detail)` → appends to audit log array in localStorage
-   - `getAuditLog()` → returns the log array
-   - `getMaskedPhone()` → returns `0303******58`
-2. Update `AdminLoginPage.tsx`:
-   - Step 1: username + password form (existing)
-   - On correct credentials → call `generateOTP()`, show OTP on screen ("Your OTP is: XXXX" for demo since no SMS), advance to Step 2
-   - Step 2: 4-digit OTP input with countdown timer (120s), attempt counter display, resend button (30s cooldown)
-   - On OTP success → set session, navigate to dashboard
-   - On OTP fail → increment attempts, show error, lock after 3 fails
-3. Update `ResetPasswordPage.tsx`:
-   - Step 1: Click to send OTP (show masked phone, generate OTP, display it on screen for demo)
-   - Step 2: Enter OTP (same rules: 120s expiry, 3 attempts, resend with 30s cooldown)
-   - Step 3: New password entry (existing UI)
-   - Remove all security question logic
+1. Update Motoko backend: add BillingItem type + CRUD, add aboutStats getter/setter, add `status` field to Review, add `inStock`/`discount` fields to Service.
+2. Update frontend:
+   a. New product card component with In Stock/Sold Out label, discount badge, no description, image slider.
+   b. Admin Dashboard: new Items tab (add/edit/delete billing items), new Reports tab (daily/weekly/monthly profit), Reviews tab shows pending + approve/reject buttons, About Stats tab already exists but now calls real backend.
+   c. Invoice form: item search/dropdown auto-suggest from BillingItems list.
+   d. About page: dynamic experience/clients from backend, approved reviews section.
+   e. Product detail page: approved reviews section at bottom.
+   f. Services tab in Admin: stock status toggle, discount field.

@@ -1,13 +1,15 @@
-
 import Map "mo:core/Map";
 import Nat "mo:core/Nat";
-import Text "mo:core/Text";
+import Iter "mo:core/Iter";
+import Array "mo:core/Array";
+import MixinStorage "blob-storage/Mixin";
+import Storage "blob-storage/Storage";
+import Migration "migration";
 
-// Printing shop backend for ID&PC Chak
-// Stores: logo, banner, admin password, services, employees, reviews, invoices, customer orders, contact messages
-
-
+(with migration = Migration.run)
 actor {
+  include MixinStorage();
+
   // ===== Type Definitions =====
 
   type InvoiceItem = {
@@ -17,6 +19,7 @@ actor {
     quality : Text;
     rate : Nat;
     total : Nat;
+    billingItemId : Nat;
   };
 
   type Service = {
@@ -25,7 +28,9 @@ actor {
     description : Text;
     price : Text;
     icon : Text;
-    image : Text;  // base64 data URL or empty string
+    image : Storage.ExternalBlob;
+    inStock : Bool;
+    discount : Nat;
   };
 
   type Employee = {
@@ -36,7 +41,7 @@ actor {
     cnic : Text;
     mobile : Text;
     bloodGroup : Text;
-    photo : Text;  // base64 data URL
+    photo : Storage.ExternalBlob;
     designation : Text;
   };
 
@@ -45,12 +50,12 @@ actor {
     customerName : Text;
     review : Text;
     rating : Nat;
+    status : Text;
     date : Text;
   };
 
   type Invoice = {
     id : Nat;
-    userId : Nat;
     customerName : Text;
     phone : Text;
     address : Text;
@@ -84,10 +89,22 @@ actor {
     isRead : Bool;
   };
 
+  type BillingItem = {
+    id : Nat;
+    name : Text;
+    sellingPrice : Nat;
+    purchasePrice : Nat;
+    category : Text;
+  };
+
+  type AboutStats = {
+    experience : Text;
+    clientsCount : Text;
+  };
+
   // ===== Persistent State =====
 
   var logo : Text = "";
-  var bannerImage : Text = "";
   var adminPassword : Text = "";
   let services = Map.empty<Nat, Service>();
   let employees = Map.empty<Nat, Employee>();
@@ -95,129 +112,236 @@ actor {
   let invoices = Map.empty<Nat, Invoice>();
   let customerOrders = Map.empty<Nat, CustomerOrder>();
   let contactMessages = Map.empty<Nat, ContactMessage>();
+  let billingItems = Map.empty<Nat, BillingItem>();
+  var aboutStats : ?AboutStats = null;
 
-  // ===== Logo / Banner / Password =====
+  // ===== Logo / Password =====
 
-  public func getLogo() : async Text { logo };
-  public func setLogo(v : Text) : async () { logo := v };
+  public shared ({ caller }) func getLogo() : async Text { logo };
+  public shared ({ caller }) func setLogo(v : Text) : async () {
+    logo := v;
+  };
 
-  public func getBannerImage() : async Text { bannerImage };
-  public func setBannerImage(v : Text) : async () { bannerImage := v };
-
-  public func getAdminPassword() : async Text { adminPassword };
-  public func setAdminPassword(v : Text) : async () { adminPassword := v };
+  public shared ({ caller }) func getAdminPassword() : async Text { adminPassword };
+  public shared ({ caller }) func setAdminPassword(v : Text) : async () {
+    adminPassword := v;
+  };
 
   // ===== Services CRUD =====
 
-  public func getAllServices() : async [Service] {
+  public shared ({ caller }) func getAllServices() : async [Service] {
     services.values().toArray();
   };
 
-  public func addService(s : Service) : async () {
+  public shared ({ caller }) func getService(id : Nat) : async ?Service {
+    services.get(id);
+  };
+
+  public shared ({ caller }) func addService(s : Service) : async () {
     services.add(s.id, s);
   };
 
-  public func updateService(id : Nat, s : Service) : async Bool {
-    if (services.containsKey(id)) { services.add(id, s); true } else { false };
+  public shared ({ caller }) func updateService(id : Nat, s : Service) : async Bool {
+    if (services.containsKey(id)) {
+      services.add(id, s);
+      true;
+    } else { false };
   };
 
-  public func deleteService(id : Nat) : async Bool {
-    if (services.containsKey(id)) { services.remove(id); true } else { false };
+  public shared ({ caller }) func deleteService(id : Nat) : async Bool {
+    if (services.containsKey(id)) {
+      services.remove(id);
+      true;
+    } else { false };
   };
 
   // ===== Employees CRUD =====
 
-  public func getAllEmployees() : async [Employee] {
+  public shared ({ caller }) func getAllEmployees() : async [Employee] {
     employees.values().toArray();
   };
 
-  public func addEmployee(e : Employee) : async () {
+  public shared ({ caller }) func getEmployee(id : Nat) : async ?Employee {
+    employees.get(id);
+  };
+
+  public shared ({ caller }) func addEmployee(e : Employee) : async () {
     employees.add(e.id, e);
   };
 
-  public func updateEmployee(id : Nat, e : Employee) : async Bool {
-    if (employees.containsKey(id)) { employees.add(id, e); true } else { false };
+  public shared ({ caller }) func updateEmployee(id : Nat, e : Employee) : async Bool {
+    if (employees.containsKey(id)) {
+      employees.add(id, e);
+      true;
+    } else { false };
   };
 
-  public func deleteEmployee(id : Nat) : async Bool {
-    if (employees.containsKey(id)) { employees.remove(id); true } else { false };
+  public shared ({ caller }) func deleteEmployee(id : Nat) : async Bool {
+    if (employees.containsKey(id)) {
+      employees.remove(id);
+      true;
+    } else { false };
   };
 
   // ===== Reviews CRUD =====
 
-  public func getAllReviews() : async [Review] {
+  public shared ({ caller }) func getAllReviews() : async [Review] {
     reviews.values().toArray();
   };
 
-  public func addReview(r : Review) : async () {
+  public shared ({ caller }) func getReview(id : Nat) : async ?Review {
+    reviews.get(id);
+  };
+
+  public shared ({ caller }) func addReview(r : Review) : async () {
     reviews.add(r.id, r);
   };
 
-  public func updateReview(id : Nat, r : Review) : async Bool {
-    if (reviews.containsKey(id)) { reviews.add(id, r); true } else { false };
+  public shared ({ caller }) func updateReview(id : Nat, r : Review) : async Bool {
+    if (reviews.containsKey(id)) {
+      reviews.add(id, r);
+      true;
+    } else { false };
   };
 
-  public func deleteReview(id : Nat) : async Bool {
-    if (reviews.containsKey(id)) { reviews.remove(id); true } else { false };
+  public shared ({ caller }) func deleteReview(id : Nat) : async Bool {
+    if (reviews.containsKey(id)) {
+      reviews.remove(id);
+      true;
+    } else { false };
+  };
+
+  public shared ({ caller }) func getApprovedReviews() : async [Review] {
+    reviews.values().toArray().filter(func(r) { r.status == "approved" });
+  };
+
+  public shared ({ caller }) func getPendingReviews() : async [Review] {
+    reviews.values().toArray().filter(func(r) { r.status == "pending" });
   };
 
   // ===== Invoices CRUD =====
 
-  public func getAllInvoices() : async [Invoice] {
+  public shared ({ caller }) func getAllInvoices() : async [Invoice] {
     invoices.values().toArray();
   };
 
-  public func addInvoice(inv : Invoice) : async () {
+  public shared ({ caller }) func getInvoice(id : Nat) : async ?Invoice {
+    invoices.get(id);
+  };
+
+  public shared ({ caller }) func addInvoice(inv : Invoice) : async () {
     invoices.add(inv.id, inv);
   };
 
-  public func updateInvoice(id : Nat, inv : Invoice) : async Bool {
-    if (invoices.containsKey(id)) { invoices.add(id, inv); true } else { false };
+  public shared ({ caller }) func updateInvoice(id : Nat, inv : Invoice) : async Bool {
+    if (invoices.containsKey(id)) {
+      invoices.add(id, inv);
+      true;
+    } else { false };
   };
 
-  public func deleteInvoice(id : Nat) : async Bool {
-    if (invoices.containsKey(id)) { invoices.remove(id); true } else { false };
+  public shared ({ caller }) func deleteInvoice(id : Nat) : async Bool {
+    if (invoices.containsKey(id)) {
+      invoices.remove(id);
+      true;
+    } else { false };
   };
 
   // ===== Customer Orders CRUD =====
 
-  public func getAllCustomerOrders() : async [CustomerOrder] {
+  public shared ({ caller }) func getAllCustomerOrders() : async [CustomerOrder] {
     customerOrders.values().toArray();
   };
 
-  public func addCustomerOrder(o : CustomerOrder) : async () {
+  public shared ({ caller }) func getCustomerOrder(id : Nat) : async ?CustomerOrder {
+    customerOrders.get(id);
+  };
+
+  public shared ({ caller }) func addCustomerOrder(o : CustomerOrder) : async () {
     customerOrders.add(o.id, o);
   };
 
-  public func updateCustomerOrder(id : Nat, o : CustomerOrder) : async Bool {
-    if (customerOrders.containsKey(id)) { customerOrders.add(id, o); true } else { false };
+  public shared ({ caller }) func updateCustomerOrder(id : Nat, o : CustomerOrder) : async Bool {
+    if (customerOrders.containsKey(id)) {
+      customerOrders.add(id, o);
+      true;
+    } else { false };
   };
 
-  public func deleteCustomerOrder(id : Nat) : async Bool {
-    if (customerOrders.containsKey(id)) { customerOrders.remove(id); true } else { false };
+  public shared ({ caller }) func deleteCustomerOrder(id : Nat) : async Bool {
+    if (customerOrders.containsKey(id)) {
+      customerOrders.remove(id);
+      true;
+    } else { false };
   };
 
   // ===== Contact Messages CRUD =====
 
-  public func getAllContactMessages() : async [ContactMessage] {
+  public shared ({ caller }) func getAllContactMessages() : async [ContactMessage] {
     contactMessages.values().toArray();
   };
 
-  public func addContactMessage(m : ContactMessage) : async () {
+  public shared ({ caller }) func getContactMessage(id : Nat) : async ?ContactMessage {
+    contactMessages.get(id);
+  };
+
+  public shared ({ caller }) func addContactMessage(m : ContactMessage) : async () {
     contactMessages.add(m.id, m);
   };
 
-  public func markContactMessageRead(id : Nat) : async Bool {
+  public shared ({ caller }) func markContactMessageRead(id : Nat) : async Bool {
     switch (contactMessages.get(id)) {
       case (?msg) {
-        contactMessages.add(id, { id = msg.id; name = msg.name; phone = msg.phone; message = msg.message; date = msg.date; isRead = true });
+        let updatedMsg = { msg with isRead = true };
+        contactMessages.add(id, updatedMsg);
         true;
       };
-      case null { false };
+      case (null) { false };
     };
   };
 
-  public func deleteContactMessage(id : Nat) : async Bool {
-    if (contactMessages.containsKey(id)) { contactMessages.remove(id); true } else { false };
+  public shared ({ caller }) func deleteContactMessage(id : Nat) : async Bool {
+    if (contactMessages.containsKey(id)) {
+      contactMessages.remove(id);
+      true;
+    } else { false };
+  };
+
+  // ===== Billing Items CRUD =====
+
+  public shared ({ caller }) func getAllBillingItems() : async [BillingItem] {
+    billingItems.values().toArray();
+  };
+
+  public shared ({ caller }) func getBillingItem(id : Nat) : async ?BillingItem {
+    billingItems.get(id);
+  };
+
+  public shared ({ caller }) func addBillingItem(item : BillingItem) : async () {
+    billingItems.add(item.id, item);
+  };
+
+  public shared ({ caller }) func updateBillingItem(id : Nat, item : BillingItem) : async Bool {
+    if (billingItems.containsKey(id)) {
+      billingItems.add(id, item);
+      true;
+    } else { false };
+  };
+
+  public shared ({ caller }) func deleteBillingItem(id : Nat) : async Bool {
+    if (billingItems.containsKey(id)) {
+      billingItems.remove(id);
+      true;
+    } else { false };
+  };
+
+  // ===== About Stats CRUD =====
+
+  public shared ({ caller }) func getAboutStats() : async ?AboutStats {
+    aboutStats;
+  };
+
+  public shared ({ caller }) func setAboutStats(stats : AboutStats) : async () {
+    aboutStats := ?stats;
   };
 };

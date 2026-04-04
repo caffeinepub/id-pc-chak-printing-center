@@ -3,22 +3,21 @@
  * Async functions for reading/writing data via the ICP backend canister.
  * Falls back to localStorage if backend is unavailable.
  * All data written to backend is also cached in localStorage.
- *
- * NOTE: The backend types differ significantly from the frontend types.
- * Complex types (invoices with full items, employees with custom fields)
- * are stored primarily in localStorage. The backend is used as a secondary
- * sync store where possible.
  */
 
 import { ExternalBlob, type backendInterface } from "@/backend";
 import {
+  type BillingItem as FEBillingItem,
   type ContactMessage as FEContactMessage,
   type Employee as FEEmployee,
   type Invoice as FEInvoice,
   type CustomerOrder as FEOrder,
   type Review as FEReview,
   type Service as FEService,
+  addBillingItemToStorage,
+  deleteBillingItemFromStorage,
   getBannerImage,
+  getBillingItems,
   getContactMessages,
   getEmployees,
   getInvoices,
@@ -34,14 +33,17 @@ import {
   setLogo as lsSetLogo,
   updateInvoice as lsUpdateInvoice,
   updateOrder as lsUpdateOrder,
+  saveBillingItems,
   saveContactMessages,
   saveOrders,
   saveReviews,
   saveServices,
+  updateBillingItemInStorage,
 } from "./storage";
 
 // Re-export frontend types for convenience
 export type {
+  FEBillingItem as BillingItem,
   FEContactMessage as ContactMessage,
   FEEmployee as Employee,
   FEOrder as Order,
@@ -102,50 +104,25 @@ export async function saveLogo(
 
 // -----------------------------------------------------------------------
 // Banner Image
-// The backend stores banner as ExternalBlob; we use localStorage for string URLs.
 // -----------------------------------------------------------------------
 
 export async function fetchBannerImage(
-  actor: backendInterface | null,
+  _actor: backendInterface | null,
 ): Promise<string> {
-  try {
-    if (actor) {
-      const banner = await actor.getBannerImage();
-      if (banner) {
-        const url = banner.getDirectURL();
-        if (url) {
-          lsSetBannerImage(url);
-          return url;
-        }
-      }
-    }
-  } catch (e) {
-    console.warn("fetchBannerImage backend error", e);
-  }
+  // Banner image is stored in localStorage only (no backend method)
   return getBannerImage();
 }
 
 export async function saveBannerImage(
-  actor: backendInterface | null,
+  _actor: backendInterface | null,
   dataUrl: string,
 ): Promise<void> {
-  // Store in localStorage immediately for fast retrieval
+  // Banner image is stored in localStorage only (no backend method)
   lsSetBannerImage(dataUrl);
-  // Upload to backend as ExternalBlob
-  if (actor) {
-    try {
-      const blob = ExternalBlob.fromURL(dataUrl);
-      await actor.setBannerImage(blob);
-    } catch (e) {
-      console.warn("saveBannerImage backend error", e);
-    }
-  }
 }
 
 // -----------------------------------------------------------------------
 // Services
-// Backend Service.image is ExternalBlob; frontend Service.image is a string.
-// We store in LS as source of truth and sync basic metadata to backend.
 // -----------------------------------------------------------------------
 
 export async function fetchServices(
@@ -155,7 +132,6 @@ export async function fetchServices(
     if (actor) {
       const svcs = await actor.getAllServices();
       if (svcs.length > 0) {
-        // Merge backend data with LS (to preserve image field stored in LS)
         const lsServices = getServices();
         const merged = svcs.map((svc) => {
           const lsMatch = lsServices.find((ls) => ls.id === svc.id.toString());
@@ -165,8 +141,9 @@ export async function fetchServices(
             name: svc.name,
             description: svc.description,
             price: svc.price || "Contact for pricing",
-            // Prefer LS image (base64) over backend blob URL
             image: lsMatch?.image || svc.image.getDirectURL() || "",
+            inStock: svc.inStock ?? true,
+            discount: Number(svc.discount ?? 0n),
           } as FEService;
         });
         saveServices(merged);
@@ -187,13 +164,15 @@ export async function backendAddService(
   const newSvc: FEService = { ...svc, id: id.toString() };
   if (actor) {
     try {
-      await actor.createService({
+      await actor.addService({
         id,
         icon: svc.icon,
         name: svc.name,
         description: svc.description,
         price: svc.price,
         image: emptyBlob(),
+        inStock: svc.inStock ?? true,
+        discount: BigInt(svc.discount ?? 0),
       });
     } catch (e) {
       console.warn("backendAddService error", e);
@@ -215,6 +194,8 @@ export async function backendUpdateService(
         description: svc.description,
         price: svc.price,
         image: emptyBlob(),
+        inStock: svc.inStock ?? true,
+        discount: BigInt(svc.discount ?? 0),
       });
     } catch (e) {
       console.warn("backendUpdateService error", e);
@@ -237,14 +218,11 @@ export async function backendDeleteService(
 
 // -----------------------------------------------------------------------
 // Employees
-// Backend Employee type has different fields (salary, jobTitle, department).
-// We use localStorage as the primary source for the full employee record.
 // -----------------------------------------------------------------------
 
 export async function fetchEmployees(
   _actor: backendInterface | null,
 ): Promise<FEEmployee[]> {
-  // Backend employee type is incompatible with FEEmployee - use LS only
   return getEmployees();
 }
 
@@ -254,7 +232,6 @@ export async function backendAddEmployee(
 ): Promise<FEEmployee> {
   const id = BigInt(Date.now());
   const newEmp: FEEmployee = { ...emp, id: id.toString() };
-  // Employee model mismatch - LS only
   return newEmp;
 }
 
@@ -262,7 +239,7 @@ export async function backendUpdateEmployee(
   _actor: backendInterface | null,
   _emp: FEEmployee,
 ): Promise<void> {
-  // Employee model mismatch - LS only
+  // LS only
 }
 
 export async function backendDeleteEmployee(
@@ -295,6 +272,7 @@ export async function fetchReviews(
           review: r.review,
           rating: Number(r.rating),
           date: r.date,
+          status: r.status || "approved",
         }));
         saveReviews(decoded);
         return decoded;
@@ -304,6 +282,49 @@ export async function fetchReviews(
     console.warn("fetchReviews backend error", e);
   }
   return getReviews();
+}
+
+export async function fetchApprovedReviews(
+  actor: backendInterface | null,
+): Promise<FEReview[]> {
+  try {
+    if (actor) {
+      const reviews = await actor.getApprovedReviews();
+      return reviews.map((r) => ({
+        id: r.id.toString(),
+        customerName: r.customerName,
+        review: r.review,
+        rating: Number(r.rating),
+        date: r.date,
+        status: "approved",
+      }));
+    }
+  } catch (e) {
+    console.warn("fetchApprovedReviews backend error", e);
+  }
+  // Fallback: filter LS reviews that are approved or have no status
+  return getReviews().filter((r) => !r.status || r.status === "approved");
+}
+
+export async function fetchPendingReviews(
+  actor: backendInterface | null,
+): Promise<FEReview[]> {
+  try {
+    if (actor) {
+      const reviews = await actor.getPendingReviews();
+      return reviews.map((r) => ({
+        id: r.id.toString(),
+        customerName: r.customerName,
+        review: r.review,
+        rating: Number(r.rating),
+        date: r.date,
+        status: "pending",
+      }));
+    }
+  } catch (e) {
+    console.warn("fetchPendingReviews backend error", e);
+  }
+  return getReviews().filter((r) => r.status === "pending");
 }
 
 export async function backendAddReview(
@@ -318,21 +339,47 @@ export async function backendAddReview(
     review: review.review,
     rating: review.rating,
     date,
+    status: review.status || "approved",
   };
   if (actor) {
     try {
-      await actor.createReview({
+      await actor.addReview({
         id,
         customerName: review.customerName,
         review: review.review,
         rating: BigInt(review.rating),
         date,
+        status: review.status || "approved",
       });
     } catch (e) {
       console.warn("backendAddReview error", e);
     }
   }
   return newReview;
+}
+
+export async function backendUpdateReview(
+  actor: backendInterface | null,
+  review: FEReview,
+): Promise<void> {
+  // Update LS
+  const reviews = getReviews();
+  const updated = reviews.map((r) => (r.id === review.id ? review : r));
+  saveReviews(updated);
+  if (actor) {
+    try {
+      await actor.updateReview(BigInt(review.id), {
+        id: BigInt(review.id),
+        customerName: review.customerName,
+        review: review.review,
+        rating: BigInt(review.rating),
+        date: review.date,
+        status: review.status || "approved",
+      });
+    } catch (e) {
+      console.warn("backendUpdateReview error", e);
+    }
+  }
 }
 
 export async function backendDeleteReview(
@@ -350,14 +397,58 @@ export async function backendDeleteReview(
 
 // -----------------------------------------------------------------------
 // Invoices
-// Backend Invoice: { id, customerName, date, totalAmount, items: [string, bigint][] }
-// Full invoice (with items detail, discount, etc.) lives in localStorage.
 // -----------------------------------------------------------------------
 
 export async function fetchInvoices(
-  _actor: backendInterface | null,
+  actor: backendInterface | null,
 ): Promise<FEInvoice[]> {
-  // Backend invoice type doesn't match FEInvoice - use localStorage as primary
+  try {
+    if (actor) {
+      const backendInvoices = await actor.getAllInvoices();
+      if (backendInvoices.length > 0) {
+        const lsInvoices = getInvoices();
+        // Merge backend IDs with LS full data
+        const merged = backendInvoices.map((bi) => {
+          const lsMatch = lsInvoices.find(
+            (li) =>
+              li.id === `INV-${bi.id.toString()}` || li.id === bi.id.toString(),
+          );
+          if (lsMatch) return lsMatch;
+          return {
+            id: `INV-${bi.id.toString()}`,
+            userId: `CUST-${bi.id.toString()}`,
+            customerName: bi.customerName,
+            phone: bi.phone || "",
+            address: bi.address || "",
+            date: bi.date,
+            items: bi.items.map((item, idx) => ({
+              srNo: Number(item.srNo) || idx + 1,
+              particular: item.particular,
+              quantity: Number(item.quantity) || 1,
+              quality: item.quality || "",
+              rate: Number(item.rate) || 0,
+              total: Number(item.total) || 0,
+              billingItemId: Number(item.billingItemId) || 0,
+            })),
+            grandTotal: Number(bi.grandTotal),
+            advance: Number(bi.advance),
+            balance: Number(bi.balance),
+            discount: Number(bi.discount),
+            terms: "",
+          } as FEInvoice;
+        });
+        // Also include LS invoices not in backend
+        for (const lsInv of lsInvoices) {
+          if (!merged.find((m) => m.id === lsInv.id)) {
+            merged.push(lsInv);
+          }
+        }
+        return merged;
+      }
+    }
+  } catch (e) {
+    console.warn("fetchInvoices backend error", e);
+  }
   return getInvoices();
 }
 
@@ -365,22 +456,28 @@ export async function backendAddInvoice(
   actor: backendInterface | null,
   invoice: FEInvoice,
 ): Promise<void> {
-  // Always save to localStorage first (primary store)
   lsAddInvoice(invoice);
   if (actor) {
     try {
-      await actor.createInvoice({
+      await actor.addInvoice({
         id: idStringToBigInt(invoice.id),
         customerName: invoice.customerName,
+        phone: invoice.phone,
+        address: invoice.address,
         date: invoice.date,
-        totalAmount: BigInt(Math.round(invoice.grandTotal)),
-        items: invoice.items.map(
-          (item) =>
-            [item.particular, BigInt(Math.round(item.total))] as [
-              string,
-              bigint,
-            ],
-        ),
+        items: invoice.items.map((item) => ({
+          srNo: BigInt(item.srNo),
+          particular: item.particular,
+          quantity: String(item.quantity),
+          quality: item.quality,
+          rate: BigInt(Math.round(item.rate)),
+          total: BigInt(Math.round(item.total)),
+          billingItemId: BigInt(item.billingItemId || 0),
+        })),
+        grandTotal: BigInt(Math.round(invoice.grandTotal)),
+        advance: BigInt(Math.round(invoice.advance)),
+        balance: BigInt(Math.round(invoice.balance)),
+        discount: BigInt(Math.round(invoice.discount)),
       });
     } catch (e) {
       console.warn("backendAddInvoice error", e);
@@ -399,15 +496,22 @@ export async function backendUpdateInvoice(
       await actor.updateInvoice(id, {
         id,
         customerName: invoice.customerName,
+        phone: invoice.phone,
+        address: invoice.address,
         date: invoice.date,
-        totalAmount: BigInt(Math.round(invoice.grandTotal)),
-        items: invoice.items.map(
-          (item) =>
-            [item.particular, BigInt(Math.round(item.total))] as [
-              string,
-              bigint,
-            ],
-        ),
+        items: invoice.items.map((item) => ({
+          srNo: BigInt(item.srNo),
+          particular: item.particular,
+          quantity: String(item.quantity),
+          quality: item.quality,
+          rate: BigInt(Math.round(item.rate)),
+          total: BigInt(Math.round(item.total)),
+          billingItemId: BigInt(item.billingItemId || 0),
+        })),
+        grandTotal: BigInt(Math.round(invoice.grandTotal)),
+        advance: BigInt(Math.round(invoice.advance)),
+        balance: BigInt(Math.round(invoice.balance)),
+        discount: BigInt(Math.round(invoice.discount)),
       });
     } catch (e) {
       console.warn("backendUpdateInvoice error", e);
@@ -431,27 +535,7 @@ export async function backendDeleteInvoice(
 
 // -----------------------------------------------------------------------
 // Customer Orders
-// Backend CustomerOrder: { id, customerName, date, invoiceId, isPaid,
-//   orderType, orderedItems, amountPaid }
-// We map our richer FEOrder to/from this structure.
 // -----------------------------------------------------------------------
-
-function encodeOrder(order: FEOrder) {
-  const id =
-    order.id && order.id !== "" ? BigInt(order.id) : BigInt(Date.now());
-  return {
-    id,
-    customerName: `${order.customerName} | ${order.phone}`,
-    date: order.date,
-    invoiceId: 0n,
-    isPaid: order.status === "completed",
-    orderType: order.serviceName,
-    orderedItems: [[order.serviceName, BigInt(order.quantity)]] as Array<
-      [string, bigint]
-    >,
-    amountPaid: BigInt(Math.round(order.totalPrice)),
-  };
-}
 
 export async function fetchOrders(
   actor: backendInterface | null,
@@ -460,24 +544,18 @@ export async function fetchOrders(
     if (actor) {
       const backendOrders = await actor.getAllCustomerOrders();
       if (backendOrders.length > 0) {
-        const decoded = backendOrders.map((o) => {
-          const parts = o.customerName.split(" | ");
-          const customerName = parts[0] || o.customerName;
-          const phone = parts[1] || "";
-          const qty = o.orderedItems[0]?.[1] ?? 1n;
-          return {
-            id: o.id.toString(),
-            serviceId: o.orderType,
-            serviceName: o.orderType,
-            customerName,
-            phone,
-            quantity: Number(qty),
-            notes: "",
-            totalPrice: Number(o.amountPaid),
-            date: o.date,
-            status: o.isPaid ? "completed" : "pending",
-          } as FEOrder;
-        });
+        const decoded = backendOrders.map((o) => ({
+          id: o.id.toString(),
+          serviceId: o.serviceId,
+          serviceName: o.serviceName,
+          customerName: o.customerName,
+          phone: o.phone,
+          quantity: Number(o.quantity),
+          notes: o.notes,
+          totalPrice: Number(o.totalPrice),
+          date: o.date,
+          status: o.status || "pending",
+        })) as FEOrder[];
         saveOrders(decoded);
         return decoded;
       }
@@ -495,7 +573,18 @@ export async function backendAddOrder(
   const newOrder = lsAddOrder(order);
   if (actor) {
     try {
-      await actor.createCustomerOrder(encodeOrder(newOrder));
+      await actor.addCustomerOrder({
+        id: BigInt(newOrder.id),
+        serviceId: newOrder.serviceId,
+        serviceName: newOrder.serviceName,
+        customerName: newOrder.customerName,
+        phone: newOrder.phone,
+        quantity: BigInt(newOrder.quantity),
+        notes: newOrder.notes,
+        totalPrice: BigInt(Math.round(newOrder.totalPrice)),
+        date: newOrder.date,
+        status: newOrder.status,
+      });
     } catch (e) {
       console.warn("backendAddOrder error", e);
     }
@@ -524,7 +613,18 @@ export async function backendUpdateOrder(
   lsUpdateOrder(order);
   if (actor) {
     try {
-      await actor.updateCustomerOrder(BigInt(order.id), encodeOrder(order));
+      await actor.updateCustomerOrder(BigInt(order.id), {
+        id: BigInt(order.id),
+        serviceId: order.serviceId,
+        serviceName: order.serviceName,
+        customerName: order.customerName,
+        phone: order.phone,
+        quantity: BigInt(order.quantity),
+        notes: order.notes,
+        totalPrice: BigInt(Math.round(order.totalPrice)),
+        date: order.date,
+        status: order.status,
+      });
     } catch (e) {
       console.warn("backendUpdateOrder error", e);
     }
@@ -533,7 +633,6 @@ export async function backendUpdateOrder(
 
 // -----------------------------------------------------------------------
 // Contact Messages
-// Backend ContactMessage: { id, name, phone, message, date, isRead } - matches!
 // -----------------------------------------------------------------------
 
 export async function fetchContactMessages(
@@ -568,7 +667,7 @@ export async function backendAddContactMessage(
   if (actor) {
     try {
       const id = BigInt(Date.now());
-      await actor.createContactMessage({
+      await actor.addContactMessage({
         id,
         name: msg.name,
         phone: msg.phone,
@@ -586,24 +685,13 @@ export async function backendMarkMessageRead(
   actor: backendInterface | null,
   id: string,
 ): Promise<void> {
-  // Update localStorage immediately
   const msgs = getContactMessages().map((m) =>
     m.id === id ? { ...m, isRead: true } : m,
   );
   saveContactMessages(msgs);
   if (actor) {
     try {
-      const existing = msgs.find((m) => m.id === id);
-      if (existing) {
-        await actor.updateContactMessage(BigInt(id), {
-          id: BigInt(id),
-          name: existing.name,
-          phone: existing.phone,
-          message: existing.message,
-          date: existing.date,
-          isRead: true,
-        });
-      }
+      await actor.markContactMessageRead(BigInt(id));
     } catch (e) {
       console.warn("backendMarkMessageRead error", e);
     }
@@ -621,6 +709,133 @@ export async function backendDeleteContactMessage(
       await actor.deleteContactMessage(BigInt(id));
     } catch (e) {
       console.warn("backendDeleteContactMessage error", e);
+    }
+  }
+}
+
+// -----------------------------------------------------------------------
+// Billing Items
+// -----------------------------------------------------------------------
+
+export async function fetchBillingItems(
+  actor: backendInterface | null,
+): Promise<FEBillingItem[]> {
+  try {
+    if (actor) {
+      const items = await actor.getAllBillingItems();
+      if (items.length > 0) {
+        const decoded = items.map((item) => ({
+          id: item.id.toString(),
+          name: item.name,
+          sellingPrice: Number(item.sellingPrice),
+          purchasePrice: Number(item.purchasePrice),
+          category: item.category,
+        }));
+        saveBillingItems(decoded);
+        return decoded;
+      }
+    }
+  } catch (e) {
+    console.warn("fetchBillingItems backend error", e);
+  }
+  return getBillingItems();
+}
+
+export async function backendAddBillingItem(
+  actor: backendInterface | null,
+  item: Omit<FEBillingItem, "id">,
+): Promise<FEBillingItem> {
+  const newItem = addBillingItemToStorage(item);
+  if (actor) {
+    try {
+      await actor.addBillingItem({
+        id: BigInt(newItem.id),
+        name: newItem.name,
+        sellingPrice: BigInt(Math.round(newItem.sellingPrice)),
+        purchasePrice: BigInt(Math.round(newItem.purchasePrice)),
+        category: newItem.category,
+      });
+    } catch (e) {
+      console.warn("backendAddBillingItem error", e);
+    }
+  }
+  return newItem;
+}
+
+export async function backendUpdateBillingItem(
+  actor: backendInterface | null,
+  item: FEBillingItem,
+): Promise<void> {
+  updateBillingItemInStorage(item);
+  if (actor) {
+    try {
+      await actor.updateBillingItem(BigInt(item.id), {
+        id: BigInt(item.id),
+        name: item.name,
+        sellingPrice: BigInt(Math.round(item.sellingPrice)),
+        purchasePrice: BigInt(Math.round(item.purchasePrice)),
+        category: item.category,
+      });
+    } catch (e) {
+      console.warn("backendUpdateBillingItem error", e);
+    }
+  }
+}
+
+export async function backendDeleteBillingItem(
+  actor: backendInterface | null,
+  id: string,
+): Promise<void> {
+  deleteBillingItemFromStorage(id);
+  if (actor) {
+    try {
+      await actor.deleteBillingItem(BigInt(id));
+    } catch (e) {
+      console.warn("backendDeleteBillingItem error", e);
+    }
+  }
+}
+
+// -----------------------------------------------------------------------
+// About Stats
+// -----------------------------------------------------------------------
+
+export async function fetchAboutStats(
+  actor: backendInterface | null,
+): Promise<{ yearsExperience: string; numClients: string }> {
+  try {
+    if (actor) {
+      const stats = await actor.getAboutStats();
+      if (stats) {
+        localStorage.setItem("idpc_years_experience", stats.experience);
+        localStorage.setItem("idpc_num_clients", stats.clientsCount);
+        return {
+          yearsExperience: stats.experience,
+          numClients: stats.clientsCount,
+        };
+      }
+    }
+  } catch (e) {
+    console.warn("fetchAboutStats backend error", e);
+  }
+  return {
+    yearsExperience: localStorage.getItem("idpc_years_experience") || "10+",
+    numClients: localStorage.getItem("idpc_num_clients") || "1000+",
+  };
+}
+
+export async function saveAboutStats(
+  actor: backendInterface | null,
+  experience: string,
+  clientsCount: string,
+): Promise<void> {
+  localStorage.setItem("idpc_years_experience", experience);
+  localStorage.setItem("idpc_num_clients", clientsCount);
+  if (actor) {
+    try {
+      await actor.setAboutStats({ experience, clientsCount });
+    } catch (e) {
+      console.warn("saveAboutStats backend error", e);
     }
   }
 }

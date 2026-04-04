@@ -8,6 +8,7 @@ export interface InvoiceItem {
   quality: string;
   rate: number;
   total: number;
+  billingItemId?: number;
 }
 
 export interface Invoice {
@@ -53,6 +54,7 @@ export interface Review {
   review: string;
   rating: number; // 1-5
   date: string;
+  status?: string; // "pending", "approved", "rejected"
 }
 
 export interface Employee {
@@ -74,6 +76,16 @@ export interface Service {
   price: string; // e.g. "Rs 200" or "Starting from Rs 500"
   icon: string;
   image?: string; // base64 data URL or empty
+  inStock?: boolean;
+  discount?: number;
+}
+
+export interface BillingItem {
+  id: string;
+  name: string;
+  sellingPrice: number;
+  purchasePrice: number;
+  category: string;
 }
 
 const DEFAULT_SERVICES: Service[] = [
@@ -84,6 +96,8 @@ const DEFAULT_SERVICES: Service[] = [
       "Custom number plates for vehicles, made with precision and durable material.",
     price: "Rs 200 - 500",
     icon: "🔢",
+    inStock: true,
+    discount: 0,
   },
   {
     id: "s2",
@@ -92,6 +106,8 @@ const DEFAULT_SERVICES: Service[] = [
       "Professional sticker cutting in any shape or size for branding and decoration.",
     price: "Starting Rs 100",
     icon: "✂️",
+    inStock: true,
+    discount: 0,
   },
   {
     id: "s3",
@@ -100,6 +116,8 @@ const DEFAULT_SERVICES: Service[] = [
       "Protective coating services to give your prints a glossy or matte finish.",
     price: "Rs 50 per page",
     icon: "🛡️",
+    inStock: true,
+    discount: 0,
   },
   {
     id: "s4",
@@ -108,6 +126,8 @@ const DEFAULT_SERVICES: Service[] = [
       "High-quality duplicate ID and membership cards made quickly and accurately.",
     price: "Rs 150 per card",
     icon: "🪪",
+    inStock: true,
+    discount: 0,
   },
   {
     id: "s5",
@@ -116,6 +136,8 @@ const DEFAULT_SERVICES: Service[] = [
       "Professional multi-language composing and typesetting services.",
     price: "Rs 100 per page",
     icon: "📝",
+    inStock: true,
+    discount: 0,
   },
   {
     id: "s6",
@@ -124,6 +146,8 @@ const DEFAULT_SERVICES: Service[] = [
       "Custom cap printing with logos and text for events, teams, and promotions.",
     price: "Rs 400 per cap",
     icon: "🧢",
+    inStock: true,
+    discount: 0,
   },
   {
     id: "s7",
@@ -132,62 +156,76 @@ const DEFAULT_SERVICES: Service[] = [
       "High-quality T-shirt printing with your custom design, text, or logo.",
     price: "Rs 500 per shirt",
     icon: "👕",
+    inStock: true,
+    discount: 0,
   },
   {
     id: "s8",
     name: "Photo Print",
-    description:
-      "Clear and vivid photo prints in all standard sizes with glossy or matte finish.",
-    price: "Rs 30 per photo",
-    icon: "🖼️",
+    description: "Crystal clear photo prints in all sizes with vibrant colors.",
+    price: "Rs 30 - 150",
+    icon: "📷",
+    inStock: true,
+    discount: 0,
   },
   {
     id: "s9",
     name: "Photo Studio",
     description:
-      "Professional photo studio for ID photos, portraits, and special occasions.",
-    price: "Starting Rs 200",
-    icon: "📷",
+      "Professional photo studio sessions for ID photos, passports, and portraits.",
+    price: "Rs 200 per session",
+    icon: "📸",
+    inStock: true,
+    discount: 0,
   },
   {
     id: "s10",
     name: "Photocopy",
-    description:
-      "Fast and clear photocopying for documents, forms, and records.",
+    description: "Fast and clear photocopying service for all your documents.",
     price: "Rs 5 per page",
-    icon: "🗂️",
+    icon: "📄",
+    inStock: true,
+    discount: 0,
   },
   {
     id: "s11",
-    name: "Panaflex / Flex Printing",
+    name: "Panaflex (Flex Printing)",
     description:
-      "Large-format flex printing for shops, events, and outdoor advertising.",
+      "Large-format flex printing for banners, billboards, and signage.",
     price: "Rs 80 per sq ft",
-    icon: "🖨️",
+    icon: "🖼️",
+    inStock: true,
+    discount: 0,
   },
   {
     id: "s12",
     name: "Wedding Cards",
     description:
-      "Beautiful custom wedding invitation cards with premium designs and paper.",
+      "Beautiful and customized wedding invitation cards in multiple designs.",
     price: "Rs 15 per card",
     icon: "💌",
+    inStock: true,
+    discount: 0,
   },
   {
     id: "s13",
     name: "Visiting Cards",
     description:
-      "Professional visiting cards with your brand identity at affordable prices.",
-    price: "Rs 500 per 100",
-    icon: "🃏",
+      "Professional visiting cards in premium quality for individuals and businesses.",
+    price: "Rs 200 per 100",
+    icon: "💼",
+    inStock: true,
+    discount: 0,
   },
   {
     id: "s14",
     name: "Pamphlets",
     description:
       "Eye-catching pamphlets and flyers for events, promotions, and businesses.",
-    price: "Rs 8 per pamphlet",
-    icon: "📄",
+    price: "Rs 3 per page",
+    icon: "📋",
+    inStock: true,
+    discount: 0,
   },
   {
     id: "s15",
@@ -196,6 +234,8 @@ const DEFAULT_SERVICES: Service[] = [
       "Custom advertisement designs and prints for all your marketing needs.",
     price: "Contact for pricing",
     icon: "📣",
+    inStock: true,
+    discount: 0,
   },
 ];
 
@@ -209,6 +249,7 @@ const KEYS = {
   bannerImage: "idpc_banner_image",
   logo: "idpc_logo",
   orders: "idpc_orders",
+  billingItems: "idpc_billing_items",
 };
 
 // Initialize storage on first load
@@ -234,19 +275,18 @@ export function initStorage() {
   if (!localStorage.getItem(KEYS.messages)) {
     localStorage.setItem(KEYS.messages, JSON.stringify([]));
   }
+  if (!localStorage.getItem(KEYS.billingItems)) {
+    localStorage.setItem(KEYS.billingItems, JSON.stringify([]));
+  }
 }
 
-// Get admin password
 export function getAdminPassword(): string {
   return localStorage.getItem(KEYS.adminPassword) || "kamii911";
 }
 
-// Set admin password
 export function setAdminPassword(password: string) {
   localStorage.setItem(KEYS.adminPassword, password);
 }
-
-// ---- Banner Image ----
 
 export function getBannerImage(): string {
   return (
@@ -259,8 +299,6 @@ export function setBannerImage(dataUrl: string) {
   localStorage.setItem(KEYS.bannerImage, dataUrl);
 }
 
-// ---- Logo ----
-
 export function getLogo(): string {
   return (
     localStorage.getItem(KEYS.logo) ||
@@ -272,11 +310,10 @@ export function setLogo(dataUrl: string) {
   localStorage.setItem(KEYS.logo, dataUrl);
 }
 
-// ---- Invoices ----
-
 export function getInvoices(): Invoice[] {
   const data = localStorage.getItem(KEYS.invoices);
-  return data ? JSON.parse(data) : [];
+  if (!data) return [];
+  return JSON.parse(data) as Invoice[];
 }
 
 export function saveInvoices(invoices: Invoice[]) {
@@ -337,7 +374,6 @@ export function getContactMessages(): ContactMessage[] {
   if (!data) return [];
   const messages = JSON.parse(data);
   // Support both old format (no isRead) and new format
-  // biome-ignore lint: intentional spread order to provide default isRead
   return messages.map((m: Record<string, unknown>) => ({
     isRead: false,
     ...m,
@@ -440,8 +476,8 @@ export function updateEmployee(updated: Employee) {
   saveEmployees(getEmployees().map((e) => (e.id === updated.id ? updated : e)));
 }
 
-export function deleteEmployee(empId: string) {
-  saveEmployees(getEmployees().filter((e) => e.id !== empId));
+export function deleteEmployee(id: string) {
+  saveEmployees(getEmployees().filter((e) => e.id !== id));
 }
 
 // ---- Services ----
@@ -455,16 +491,33 @@ export function saveServices(services: Service[]) {
   localStorage.setItem(KEYS.services, JSON.stringify(services));
 }
 
-export function addService(svc: Omit<Service, "id">) {
-  const services = getServices();
-  services.push({ ...svc, id: Date.now().toString() });
-  saveServices(services);
+// ---- Billing Items ----
+
+export function getBillingItems(): BillingItem[] {
+  const data = localStorage.getItem(KEYS.billingItems);
+  return data ? JSON.parse(data) : [];
 }
 
-export function updateService(updated: Service) {
-  saveServices(getServices().map((s) => (s.id === updated.id ? updated : s)));
+export function saveBillingItems(items: BillingItem[]) {
+  localStorage.setItem(KEYS.billingItems, JSON.stringify(items));
 }
 
-export function deleteService(svcId: string) {
-  saveServices(getServices().filter((s) => s.id !== svcId));
+export function addBillingItemToStorage(
+  item: Omit<BillingItem, "id">,
+): BillingItem {
+  const items = getBillingItems();
+  const newItem: BillingItem = { ...item, id: Date.now().toString() };
+  items.push(newItem);
+  saveBillingItems(items);
+  return newItem;
+}
+
+export function updateBillingItemInStorage(updated: BillingItem) {
+  saveBillingItems(
+    getBillingItems().map((i) => (i.id === updated.id ? updated : i)),
+  );
+}
+
+export function deleteBillingItemFromStorage(id: string) {
+  saveBillingItems(getBillingItems().filter((i) => i.id !== id));
 }

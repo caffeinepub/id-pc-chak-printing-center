@@ -6,16 +6,21 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useActor } from "@/hooks/useActor";
 import {
+  useApprovedReviews,
+  useBillingItems,
   useContactMessages,
   useInvalidate,
   useInvoices,
   useOrders,
+  usePendingReviews,
 } from "@/hooks/useQueries";
 import {
+  backendAddBillingItem,
   backendAddEmployee,
   backendAddInvoice,
   backendAddReview,
   backendAddService,
+  backendDeleteBillingItem,
   backendDeleteContactMessage,
   backendDeleteEmployee,
   backendDeleteInvoice,
@@ -23,14 +28,18 @@ import {
   backendDeleteReview,
   backendDeleteService,
   backendMarkMessageRead,
+  backendUpdateBillingItem,
   backendUpdateEmployee,
   backendUpdateInvoice,
   backendUpdateOrder,
+  backendUpdateReview,
   backendUpdateService,
+  saveAboutStats,
   saveBannerImage,
   saveLogo,
 } from "@/lib/backendData";
 import {
+  type BillingItem,
   type Employee,
   type Invoice,
   type InvoiceItem,
@@ -49,13 +58,17 @@ import {
 } from "@/lib/storage";
 import { useNavigate } from "@tanstack/react-router";
 import {
+  BarChart3,
   Bell,
+  CheckCircle,
   Eye,
   FileText,
   Image,
+  Info,
   LogOut,
   Mail,
   MessageSquare,
+  Package,
   Pencil,
   Plus,
   PlusCircle,
@@ -65,7 +78,9 @@ import {
   ShoppingBag,
   Star,
   Trash2,
+  TrendingUp,
   Users,
+  XCircle,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
@@ -76,9 +91,30 @@ const DEFAULT_TERMS = `1. Payment is due within 7 days of invoice date.
 5. Advance payment is non-refundable.`;
 
 const DEFAULT_ITEMS = () => [
-  { rowId: "row-1", particular: "", quantity: 1, quality: "", rate: 0 },
-  { rowId: "row-2", particular: "", quantity: 1, quality: "", rate: 0 },
-  { rowId: "row-3", particular: "", quantity: 1, quality: "", rate: 0 },
+  {
+    rowId: "row-1",
+    particular: "",
+    quantity: 1,
+    quality: "",
+    rate: 0,
+    billingItemId: 0,
+  },
+  {
+    rowId: "row-2",
+    particular: "",
+    quantity: 1,
+    quality: "",
+    rate: 0,
+    billingItemId: 0,
+  },
+  {
+    rowId: "row-3",
+    particular: "",
+    quantity: 1,
+    quality: "",
+    rate: 0,
+    billingItemId: 0,
+  },
 ];
 
 type Tab =
@@ -88,17 +124,27 @@ type Tab =
   | "reviews"
   | "employees"
   | "services"
+  | "items"
+  | "reports"
   | "banner"
-  | "logo";
+  | "logo"
+  | "about";
 type View = "list" | "create" | "view-invoice";
 
 interface ItemRow extends Omit<InvoiceItem, "srNo" | "total"> {
   rowId: string;
+  billingItemId: number;
 }
 
 const BLOOD_GROUPS = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
-
 const ORDER_STATUSES = ["pending", "confirmed", "completed"];
+const REPORT_PERIODS = ["daily", "weekly", "monthly"] as const;
+type ReportPeriod = (typeof REPORT_PERIODS)[number];
+
+function formatOrderNumber(id: string): string {
+  const num = Number.parseInt(id, 10) || 0;
+  return `ORD-${String(num % 10000).padStart(4, "0")}`;
+}
 
 export default function AdminDashboardPage() {
   const navigate = useNavigate();
@@ -109,7 +155,10 @@ export default function AdminDashboardPage() {
   const { data: invoices = [] } = useInvoices();
   const { data: orders = [] } = useOrders();
   const { data: contactMessages = [] } = useContactMessages();
-  const [reviews, setReviews] = useState<Review[]>([]);
+  const { data: billingItems = [] } = useBillingItems();
+  const { data: pendingReviews = [] } = usePendingReviews();
+  const { data: approvedReviews = [] } = useApprovedReviews();
+  const [_reviews, setReviews] = useState<Review[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [services, setServices] = useState<Service[]>([]);
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
@@ -127,6 +176,10 @@ export default function AdminDashboardPage() {
     discountPct: 0,
   });
   const [items, setItems] = useState<ItemRow[]>(DEFAULT_ITEMS());
+  const [itemSearches, setItemSearches] = useState<Record<string, string>>({});
+  const [itemDropdownOpen, setItemDropdownOpen] = useState<
+    Record<string, boolean>
+  >({});
 
   // Review form
   const [reviewForm, setReviewForm] = useState({
@@ -157,19 +210,37 @@ export default function AdminDashboardPage() {
     price: "",
     icon: "🖨️",
     image: "",
+    inStock: true,
+    discount: 0,
   };
   const [svcForm, setSvcForm] = useState(emptySvc);
   const [editingSvc, setEditingSvc] = useState<Service | null>(null);
   const svcImageRef = useRef<HTMLInputElement>(null);
 
-  // Banner
+  // Billing Item form
+  const emptyBillingItem = {
+    name: "",
+    sellingPrice: 0,
+    purchasePrice: 0,
+    category: "",
+  };
+  const [billingItemForm, setBillingItemForm] = useState(emptyBillingItem);
+  const [editingBillingItem, setEditingBillingItem] =
+    useState<BillingItem | null>(null);
+
+  // Banner / Logo
   const [bannerPreview, setBannerPreview] = useState<string>("");
   const [logoPreview, setLogoPreview] = useState<string>("");
   const logoRef = useRef<HTMLInputElement>(null);
   const bannerRef = useRef<HTMLInputElement>(null);
+  const [aboutYears, setAboutYears] = useState<string>("");
+  const [aboutClients, setAboutClients] = useState<string>("");
 
-  // Unread message count
+  // Reports
+  const [reportPeriod, setReportPeriod] = useState<ReportPeriod>("monthly");
+
   const unreadCount = contactMessages.filter((m) => !m.isRead).length;
+  const pendingReviewCount = pendingReviews.length;
 
   useEffect(() => {
     document.title = "Admin Dashboard - ID&PC Chak";
@@ -182,6 +253,8 @@ export default function AdminDashboardPage() {
     setServices(getServices());
     setBannerPreview(getBannerImage());
     setLogoPreview(getLogo());
+    setAboutYears(localStorage.getItem("idpc_years_experience") || "10+");
+    setAboutClients(localStorage.getItem("idpc_num_clients") || "1000+");
   }, [navigate]);
 
   function logout() {
@@ -197,6 +270,7 @@ export default function AdminDashboardPage() {
     quality: item.quality,
     rate: item.rate,
     total: item.quantity * item.rate,
+    billingItemId: item.billingItemId || 0,
   }));
   const subtotal = computedItems.reduce((sum, item) => sum + item.total, 0);
   const discountAmount =
@@ -213,6 +287,7 @@ export default function AdminDashboardPage() {
         quantity: 1,
         quality: "",
         rate: 0,
+        billingItemId: 0,
       },
     ]);
   }
@@ -227,7 +302,22 @@ export default function AdminDashboardPage() {
       ),
     );
   }
-
+  function selectBillingItem(rowId: string, bi: BillingItem) {
+    setItems((prev) =>
+      prev.map((item) =>
+        item.rowId === rowId
+          ? {
+              ...item,
+              particular: bi.name,
+              rate: bi.sellingPrice,
+              billingItemId: Number(bi.id),
+            }
+          : item,
+      ),
+    );
+    setItemSearches((prev) => ({ ...prev, [rowId]: bi.name }));
+    setItemDropdownOpen((prev) => ({ ...prev, [rowId]: false }));
+  }
   function resetInvoiceForm() {
     setForm({
       customerName: "",
@@ -240,6 +330,8 @@ export default function AdminDashboardPage() {
       discountPct: 0,
     });
     setItems(DEFAULT_ITEMS());
+    setItemSearches({});
+    setItemDropdownOpen({});
     setEditingInvoice(null);
   }
 
@@ -306,17 +398,39 @@ export default function AdminDashboardPage() {
         quantity: item.quantity,
         quality: item.quality,
         rate: item.rate,
+        billingItemId: item.billingItemId || 0,
       })),
     );
     setView("create");
   }
 
+  function handleCreateInvoiceFromOrder(order: (typeof orders)[0]) {
+    resetInvoiceForm();
+    setForm((prev) => ({
+      ...prev,
+      customerName: order.customerName,
+      phone: order.phone,
+      date: new Date().toISOString().split("T")[0],
+    }));
+    setItems([
+      {
+        rowId: "row-order-1",
+        particular: order.serviceName,
+        quantity: order.quantity,
+        quality: "",
+        rate:
+          order.totalPrice > 0
+            ? Math.round(order.totalPrice / order.quantity)
+            : 0,
+        billingItemId: 0,
+      },
+    ]);
+    setTab("invoices");
+    setView("create");
+  }
+
   async function handleDeleteInvoice(inv: Invoice) {
-    if (
-      window.confirm(
-        `Delete invoice ${inv.id} for ${inv.customerName}? This cannot be undone.`,
-      )
-    ) {
+    if (window.confirm(`Delete invoice ${inv.id} for ${inv.customerName}?`)) {
       await backendDeleteInvoice(actor, inv.id);
       invalidate(["invoices"]);
     }
@@ -325,14 +439,27 @@ export default function AdminDashboardPage() {
   async function handleAddReview(e: React.FormEvent) {
     e.preventDefault();
     if (!reviewForm.customerName.trim() || !reviewForm.review.trim()) return;
-    const newReview = await backendAddReview(actor, reviewForm);
+    const newReview = await backendAddReview(actor, {
+      ...reviewForm,
+      status: "approved",
+    });
     setReviews((prev) => {
       const updated = [...prev, newReview];
       saveReviews(updated);
       return updated;
     });
     setReviewForm({ customerName: "", review: "", rating: 5 });
-    invalidate(["reviews"]);
+    invalidate(["reviews", "approvedReviews"]);
+  }
+
+  async function handleApproveReview(r: Review) {
+    await backendUpdateReview(actor, { ...r, status: "approved" });
+    invalidate(["reviews", "approvedReviews", "pendingReviews"]);
+  }
+
+  async function handleRejectReview(r: Review) {
+    await backendUpdateReview(actor, { ...r, status: "rejected" });
+    invalidate(["reviews", "approvedReviews", "pendingReviews"]);
   }
 
   async function handleDeleteReview(id: string) {
@@ -343,11 +470,10 @@ export default function AdminDashboardPage() {
         saveReviews(updated);
         return updated;
       });
-      invalidate(["reviews"]);
+      invalidate(["reviews", "approvedReviews", "pendingReviews"]);
     }
   }
 
-  // Employee helpers
   function handleEmpPhoto(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -396,7 +522,7 @@ export default function AdminDashboardPage() {
   }
 
   async function handleDeleteEmp(id: string) {
-    if (window.confirm("Delete this employee? This cannot be undone.")) {
+    if (window.confirm("Delete this employee?")) {
       await backendDeleteEmployee(actor, id);
       setEmployees((prev) => {
         const list = prev.filter((em) => em.id !== id);
@@ -407,7 +533,6 @@ export default function AdminDashboardPage() {
     }
   }
 
-  // Service helpers
   function handleSvcImage(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -449,6 +574,8 @@ export default function AdminDashboardPage() {
       price: svc.price,
       icon: svc.icon,
       image: svc.image || "",
+      inStock: svc.inStock !== false,
+      discount: svc.discount || 0,
     });
   }
 
@@ -464,7 +591,36 @@ export default function AdminDashboardPage() {
     }
   }
 
-  // Order helpers
+  async function handleSaveBillingItem(e: React.FormEvent) {
+    e.preventDefault();
+    if (editingBillingItem) {
+      const updated = { ...billingItemForm, id: editingBillingItem.id };
+      await backendUpdateBillingItem(actor, updated);
+    } else {
+      await backendAddBillingItem(actor, billingItemForm);
+    }
+    setBillingItemForm(emptyBillingItem);
+    setEditingBillingItem(null);
+    invalidate(["billingItems"]);
+  }
+
+  function handleEditBillingItem(item: BillingItem) {
+    setEditingBillingItem(item);
+    setBillingItemForm({
+      name: item.name,
+      sellingPrice: item.sellingPrice,
+      purchasePrice: item.purchasePrice,
+      category: item.category,
+    });
+  }
+
+  async function handleDeleteBillingItem(id: string) {
+    if (window.confirm("Delete this billing item?")) {
+      await backendDeleteBillingItem(actor, id);
+      invalidate(["billingItems"]);
+    }
+  }
+
   async function handleDeleteOrder(id: string) {
     if (window.confirm("Delete this order?")) {
       await backendDeleteOrder(actor, id);
@@ -479,7 +635,6 @@ export default function AdminDashboardPage() {
     invalidate(["orders"]);
   }
 
-  // Message helpers
   async function handleMarkMessageRead(id: string) {
     await backendMarkMessageRead(actor, id);
     invalidate(["contactMessages"]);
@@ -492,7 +647,6 @@ export default function AdminDashboardPage() {
     }
   }
 
-  // Logo helpers
   function handleLogoUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -505,12 +659,9 @@ export default function AdminDashboardPage() {
     if (!logoPreview) return;
     await saveLogo(actor, logoPreview);
     invalidate(["logo"]);
-    alert(
-      "Logo updated successfully! It will now appear everywhere on the website and invoices.",
-    );
+    alert("Logo updated successfully!");
   }
 
-  // Banner helpers
   function handleBannerUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -524,6 +675,49 @@ export default function AdminDashboardPage() {
     await saveBannerImage(actor, bannerPreview);
     invalidate(["bannerImage"]);
     alert("Homepage banner image updated successfully!");
+  }
+
+  function getReportInvoices() {
+    const now = new Date();
+    return invoices.filter((inv) => {
+      const d = new Date(inv.date);
+      if (reportPeriod === "daily") {
+        return (
+          d.getDate() === now.getDate() &&
+          d.getMonth() === now.getMonth() &&
+          d.getFullYear() === now.getFullYear()
+        );
+      }
+      if (reportPeriod === "weekly") {
+        const diffMs = now.getTime() - d.getTime();
+        return diffMs >= 0 && diffMs <= 7 * 24 * 60 * 60 * 1000;
+      }
+      return (
+        d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()
+      );
+    });
+  }
+
+  function calcReportData() {
+    const filtered = getReportInvoices();
+    const totalSales = filtered.reduce((s, inv) => s + inv.grandTotal, 0);
+    let totalCost = 0;
+    for (const inv of filtered) {
+      for (const item of inv.items) {
+        if (item.billingItemId && item.billingItemId > 0) {
+          const bi = billingItems.find(
+            (b) => b.id === String(item.billingItemId),
+          );
+          if (bi) totalCost += bi.purchasePrice * item.quantity;
+        }
+      }
+    }
+    return {
+      filtered,
+      totalSales,
+      totalCost,
+      totalProfit: totalSales - totalCost,
+    };
   }
 
   const TABS: {
@@ -553,6 +747,7 @@ export default function AdminDashboardPage() {
       key: "reviews",
       label: "Reviews",
       icon: <MessageSquare className="w-4 h-4" />,
+      badge: pendingReviewCount || undefined,
     },
     {
       key: "employees",
@@ -565,20 +760,26 @@ export default function AdminDashboardPage() {
       icon: <Settings className="w-4 h-4" />,
     },
     {
+      key: "items",
+      label: "Billing Items",
+      icon: <Package className="w-4 h-4" />,
+    },
+    {
+      key: "reports",
+      label: "Reports",
+      icon: <BarChart3 className="w-4 h-4" />,
+    },
+    {
       key: "banner",
       label: "Banner Image",
       icon: <Image className="w-4 h-4" />,
     },
-    {
-      key: "logo",
-      label: "Logo",
-      icon: <Image className="w-4 h-4" />,
-    },
+    { key: "logo", label: "Logo", icon: <Image className="w-4 h-4" /> },
+    { key: "about", label: "About Stats", icon: <Info className="w-4 h-4" /> },
   ];
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Admin Header */}
       <header className="bg-brand-blue text-white px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between shadow-md no-print">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-full bg-brand-gold flex items-center justify-center">
@@ -618,7 +819,6 @@ export default function AdminDashboardPage() {
       </header>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Tabs */}
         {view === "list" && (
           <div className="flex flex-wrap gap-2 mb-6 no-print">
             {TABS.map((t) => (
@@ -626,11 +826,7 @@ export default function AdminDashboardPage() {
                 key={t.key}
                 type="button"
                 onClick={() => setTab(t.key)}
-                className={`relative flex items-center gap-2 px-4 py-2 rounded-full font-semibold text-sm transition-colors ${
-                  tab === t.key
-                    ? "bg-brand-blue text-white"
-                    : "bg-muted text-foreground hover:bg-muted/70"
-                }`}
+                className={`relative flex items-center gap-2 px-4 py-2 rounded-full font-semibold text-sm transition-colors ${tab === t.key ? "bg-brand-blue text-white" : "bg-muted text-foreground hover:bg-muted/70"}`}
                 data-ocid={`admin.${t.key}.tab`}
               >
                 {t.icon} {t.label}
@@ -674,9 +870,7 @@ export default function AdminDashboardPage() {
               >
                 <CardContent className="p-12 text-center">
                   <FileText className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
-                  <p className="text-muted-foreground">
-                    No invoices yet. Create your first invoice!
-                  </p>
+                  <p className="text-muted-foreground">No invoices yet.</p>
                 </CardContent>
               </Card>
             ) : (
@@ -765,7 +959,7 @@ export default function AdminDashboardPage() {
                                 variant="outline"
                                 onClick={() =>
                                   alert(
-                                    `Invoice ${inv.id} for ${inv.customerName}\nUser ID: ${inv.userId}\n\nShare the User ID and Invoice Number with the customer so they can view it on the Bill Check page.`,
+                                    `Invoice ${inv.id} for ${inv.customerName}\nUser ID: ${inv.userId}`,
                                   )
                                 }
                                 className="border-green-500 text-green-600 hover:bg-green-50 h-8 px-2"
@@ -793,7 +987,7 @@ export default function AdminDashboardPage() {
                 Customer Orders
               </h1>
               <p className="text-muted-foreground text-sm">
-                {orders.length} orders total •{" "}
+                {orders.length} orders •{" "}
                 {orders.filter((o) => o.status === "pending").length} pending
               </p>
             </div>
@@ -805,8 +999,7 @@ export default function AdminDashboardPage() {
                 <CardContent className="p-12 text-center">
                   <ShoppingBag className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
                   <p className="text-muted-foreground">
-                    No customer orders yet. Orders placed from the Products page
-                    will appear here.
+                    No customer orders yet.
                   </p>
                 </CardContent>
               </Card>
@@ -816,6 +1009,7 @@ export default function AdminDashboardPage() {
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="bg-brand-blue text-white">
+                        <th className="text-left p-3">Order #</th>
                         <th className="text-left p-3">Date</th>
                         <th className="text-left p-3">Customer</th>
                         <th className="text-left p-3">Phone</th>
@@ -823,7 +1017,7 @@ export default function AdminDashboardPage() {
                         <th className="text-center p-3">Qty</th>
                         <th className="text-right p-3">Total</th>
                         <th className="text-center p-3">Status</th>
-                        <th className="text-center p-3">Action</th>
+                        <th className="text-center p-3">Actions</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -833,6 +1027,9 @@ export default function AdminDashboardPage() {
                           className="border-b border-border hover:bg-muted/40 transition-colors"
                           data-ocid={`admin.orders.row.${i + 1}`}
                         >
+                          <td className="p-3 font-bold text-brand-blue">
+                            {formatOrderNumber(order.id)}
+                          </td>
                           <td className="p-3 text-muted-foreground">
                             {order.date}
                           </td>
@@ -858,13 +1055,7 @@ export default function AdminDashboardPage() {
                                   e.target.value,
                                 )
                               }
-                              className={`border rounded px-2 py-1 text-xs font-semibold cursor-pointer ${
-                                order.status === "pending"
-                                  ? "border-yellow-400 text-yellow-700 bg-yellow-50"
-                                  : order.status === "confirmed"
-                                    ? "border-blue-400 text-blue-700 bg-blue-50"
-                                    : "border-green-400 text-green-700 bg-green-50"
-                              }`}
+                              className={`border rounded px-2 py-1 text-xs font-semibold cursor-pointer ${order.status === "pending" ? "border-yellow-400 text-yellow-700 bg-yellow-50" : order.status === "confirmed" ? "border-blue-400 text-blue-700 bg-blue-50" : "border-green-400 text-green-700 bg-green-50"}`}
                               data-ocid={`admin.orders.select.${i + 1}`}
                             >
                               {ORDER_STATUSES.map((s) => (
@@ -875,16 +1066,30 @@ export default function AdminDashboardPage() {
                             </select>
                           </td>
                           <td className="p-3 text-center">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => handleDeleteOrder(order.id)}
-                              className="border-brand-red text-brand-red hover:bg-brand-red hover:text-white h-7 px-2"
-                              title="Delete"
-                              data-ocid={`admin.orders.delete_button.${i + 1}`}
-                            >
-                              <Trash2 className="w-3 h-3" />
-                            </Button>
+                            <div className="flex items-center justify-center gap-1">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() =>
+                                  handleCreateInvoiceFromOrder(order)
+                                }
+                                className="border-brand-blue text-brand-blue hover:bg-brand-blue hover:text-white h-7 px-2 text-xs"
+                                title="Create Invoice"
+                                data-ocid={`admin.orders.edit_button.${i + 1}`}
+                              >
+                                <FileText className="w-3 h-3 mr-1" /> Invoice
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleDeleteOrder(order.id)}
+                                className="border-brand-red text-brand-red hover:bg-brand-red hover:text-white h-7 px-2"
+                                title="Delete"
+                                data-ocid={`admin.orders.delete_button.${i + 1}`}
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </Button>
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -922,8 +1127,7 @@ export default function AdminDashboardPage() {
                 <CardContent className="p-12 text-center">
                   <Mail className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
                   <p className="text-muted-foreground">
-                    No contact messages yet. Messages from the Contact page will
-                    appear here.
+                    No contact messages yet.
                   </p>
                 </CardContent>
               </Card>
@@ -932,11 +1136,7 @@ export default function AdminDashboardPage() {
                 {contactMessages.map((msg, i) => (
                   <Card
                     key={msg.id}
-                    className={`border-2 shadow-card transition-colors ${
-                      !msg.isRead
-                        ? "border-brand-gold/60 bg-brand-gold/5"
-                        : "border-border"
-                    }`}
+                    className={`border-2 shadow-card transition-colors ${!msg.isRead ? "border-brand-gold/60 bg-brand-gold/5" : "border-border"}`}
                     data-ocid={`admin.messages.item.${i + 1}`}
                   >
                     <CardContent className="p-4">
@@ -969,7 +1169,6 @@ export default function AdminDashboardPage() {
                               variant="outline"
                               onClick={() => handleMarkMessageRead(msg.id)}
                               className="border-green-500 text-green-600 hover:bg-green-50 h-8 px-2 text-xs"
-                              title="Mark as read"
                               data-ocid={`admin.messages.confirm_button.${i + 1}`}
                             >
                               <Eye className="w-3 h-3 mr-1" /> Read
@@ -980,7 +1179,6 @@ export default function AdminDashboardPage() {
                             variant="outline"
                             onClick={() => handleDeleteMessage(msg.id)}
                             className="border-brand-red text-brand-red hover:bg-brand-red hover:text-white h-8 px-2"
-                            title="Delete"
                             data-ocid={`admin.messages.delete_button.${i + 1}`}
                           >
                             <Trash2 className="w-3 h-3" />
@@ -1003,13 +1201,83 @@ export default function AdminDashboardPage() {
                 Customer Reviews
               </h1>
               <p className="text-muted-foreground text-sm">
-                Add reviews from real customers. They appear on the Home page.
+                Manage and approve customer reviews.
               </p>
             </div>
+
+            {pendingReviews.length > 0 && (
+              <div className="mb-8">
+                <h2 className="font-heading font-bold text-lg text-brand-gold mb-4 flex items-center gap-2">
+                  <Bell className="w-5 h-5" /> Pending Approval (
+                  {pendingReviews.length})
+                </h2>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {pendingReviews.map((r, i) => (
+                    <Card
+                      key={r.id}
+                      className="border-2 border-brand-gold/50 shadow-card bg-brand-gold/5"
+                      data-ocid={`admin.reviews.item.${i + 1}`}
+                    >
+                      <CardContent className="p-5">
+                        <div className="flex justify-between items-start mb-2">
+                          <div>
+                            <p className="font-semibold text-brand-blue">
+                              {r.customerName}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {r.date}
+                            </p>
+                          </div>
+                          <div className="flex gap-1">
+                            {Array.from({ length: r.rating }).map((_, si) => (
+                              <Star
+                                key={`prs-${r.id}-${si}`}
+                                className="w-4 h-4 fill-brand-gold text-brand-gold"
+                              />
+                            ))}
+                          </div>
+                        </div>
+                        <p className="text-muted-foreground text-sm italic mb-3">
+                          "{r.review}"
+                        </p>
+                        <div className="flex gap-2">
+                          <Button
+                            size="sm"
+                            onClick={() => handleApproveReview(r)}
+                            className="bg-green-600 text-white hover:bg-green-700 h-8 px-3 text-xs flex-1"
+                            data-ocid={`admin.reviews.confirm_button.${i + 1}`}
+                          >
+                            <CheckCircle className="w-3 h-3 mr-1" /> Approve
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleRejectReview(r)}
+                            className="border-red-400 text-red-600 hover:bg-red-50 h-8 px-3 text-xs flex-1"
+                            data-ocid={`admin.reviews.cancel_button.${i + 1}`}
+                          >
+                            <XCircle className="w-3 h-3 mr-1" /> Reject
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleDeleteReview(r.id)}
+                            className="border-brand-red text-brand-red hover:bg-brand-red hover:text-white h-8 px-2"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </Button>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <Card className="border-2 border-border shadow-card mb-8">
               <CardHeader>
                 <CardTitle className="text-brand-blue">
-                  Add New Review
+                  Add Review (Admin)
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -1030,6 +1298,7 @@ export default function AdminDashboardPage() {
                         placeholder="e.g. Muhammad Ali"
                         required
                         className="mt-1"
+                        data-ocid="admin.reviews.input"
                       />
                     </div>
                     <div>
@@ -1067,30 +1336,42 @@ export default function AdminDashboardPage() {
                       required
                       rows={3}
                       className="mt-1"
+                      data-ocid="admin.reviews.textarea"
                     />
                   </div>
                   <Button
                     type="submit"
                     className="bg-brand-blue text-white hover:bg-brand-blue-dark"
+                    data-ocid="admin.reviews.submit_button"
                   >
-                    <Plus className="w-4 h-4 mr-2" /> Add Review
+                    <Plus className="w-4 h-4 mr-2" /> Add Review (Approved)
                   </Button>
                 </form>
               </CardContent>
             </Card>
-            {reviews.length === 0 ? (
-              <Card className="border-dashed border-2">
+
+            <h2 className="font-heading font-bold text-lg text-brand-blue mb-4">
+              Approved Reviews ({approvedReviews.length})
+            </h2>
+            {approvedReviews.length === 0 ? (
+              <Card
+                className="border-dashed border-2"
+                data-ocid="admin.reviews.empty_state"
+              >
                 <CardContent className="p-12 text-center">
                   <MessageSquare className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
-                  <p className="text-muted-foreground">No reviews added yet.</p>
+                  <p className="text-muted-foreground">
+                    No approved reviews yet.
+                  </p>
                 </CardContent>
               </Card>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {reviews.map((r) => (
+                {approvedReviews.map((r, i) => (
                   <Card
                     key={r.id}
                     className="border-2 border-border shadow-card"
+                    data-ocid={`admin.reviews.row.${i + 1}`}
                   >
                     <CardContent className="p-5">
                       <div className="flex justify-between items-start mb-2">
@@ -1102,22 +1383,25 @@ export default function AdminDashboardPage() {
                             {r.date}
                           </p>
                         </div>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handleDeleteReview(r.id)}
-                          className="border-brand-red text-brand-red hover:bg-brand-red hover:text-white h-8 px-2"
-                        >
-                          <Trash2 className="w-3 h-3" />
-                        </Button>
-                      </div>
-                      <div className="flex gap-1 mb-2">
-                        {Array.from({ length: r.rating }).map((_, si) => (
-                          <Star
-                            key={`rs-${r.id}-${si}`}
-                            className="w-4 h-4 fill-brand-gold text-brand-gold"
-                          />
-                        ))}
+                        <div className="flex items-center gap-2">
+                          <div className="flex gap-0.5">
+                            {Array.from({ length: r.rating }).map((_, si) => (
+                              <Star
+                                key={`rs-${r.id}-${si}`}
+                                className="w-4 h-4 fill-brand-gold text-brand-gold"
+                              />
+                            ))}
+                          </div>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleDeleteReview(r.id)}
+                            className="border-brand-red text-brand-red hover:bg-brand-red hover:text-white h-8 px-2"
+                            data-ocid={`admin.reviews.delete_button.${i + 1}`}
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </Button>
+                        </div>
                       </div>
                       <p className="text-muted-foreground text-sm italic">
                         "{r.review}"
@@ -1142,8 +1426,6 @@ export default function AdminDashboardPage() {
                 About page
               </p>
             </div>
-
-            {/* Add / Edit Employee Form */}
             <Card className="border-2 border-border shadow-card mb-8">
               <CardHeader>
                 <CardTitle className="text-brand-blue">
@@ -1317,8 +1599,6 @@ export default function AdminDashboardPage() {
                 </form>
               </CardContent>
             </Card>
-
-            {/* Employee List */}
             {employees.length === 0 ? (
               <Card className="border-dashed border-2">
                 <CardContent className="p-12 text-center">
@@ -1415,10 +1695,9 @@ export default function AdminDashboardPage() {
               </h1>
               <p className="text-muted-foreground text-sm">
                 {services.length} services • Changes reflect instantly on the
-                Homepage and Products page
+                Products page
               </p>
             </div>
-
             <Card className="border-2 border-border shadow-card mb-8">
               <CardHeader>
                 <CardTitle className="text-brand-blue">
@@ -1465,13 +1744,52 @@ export default function AdminDashboardPage() {
                         onChange={(e) =>
                           setSvcForm((p) => ({ ...p, icon: e.target.value }))
                         }
-                        placeholder="e.g. 👕"
+                        placeholder="e.g. 🖨️"
                         className="mt-1"
                       />
                     </div>
                     <div>
                       <Label className="text-brand-blue font-semibold">
-                        Product Image (optional)
+                        Discount %
+                      </Label>
+                      <Input
+                        type="number"
+                        min="0"
+                        max="100"
+                        value={svcForm.discount}
+                        onChange={(e) =>
+                          setSvcForm((p) => ({
+                            ...p,
+                            discount: Number(e.target.value) || 0,
+                          }))
+                        }
+                        placeholder="0"
+                        className="mt-1"
+                      />
+                    </div>
+                    <div className="flex items-center gap-3 mt-2">
+                      <Label className="text-brand-blue font-semibold">
+                        In Stock
+                      </Label>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setSvcForm((p) => ({ ...p, inStock: !p.inStock }))
+                        }
+                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${svcForm.inStock ? "bg-green-500" : "bg-gray-300"}`}
+                        data-ocid="admin.services.toggle"
+                      >
+                        <span
+                          className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${svcForm.inStock ? "translate-x-6" : "translate-x-1"}`}
+                        />
+                      </button>
+                      <span className="text-sm text-muted-foreground">
+                        {svcForm.inStock ? "In Stock" : "Sold Out"}
+                      </span>
+                    </div>
+                    <div>
+                      <Label className="text-brand-blue font-semibold">
+                        Product Image
                       </Label>
                       <Input
                         ref={svcImageRef}
@@ -1479,30 +1797,25 @@ export default function AdminDashboardPage() {
                         accept="image/*"
                         onChange={handleSvcImage}
                         className="mt-1"
-                        data-ocid="admin.services.upload_button"
                       />
                       {svcForm.image && (
-                        <div className="mt-2 relative inline-block">
+                        <div className="mt-2 flex items-center gap-2">
                           <img
                             src={svcForm.image}
-                            alt="Service preview"
-                            className="w-24 h-24 rounded-lg object-cover border-2 border-brand-gold"
+                            alt="preview"
+                            className="w-16 h-16 rounded object-cover border border-border"
                           />
                           <button
                             type="button"
                             onClick={() =>
                               setSvcForm((p) => ({ ...p, image: "" }))
                             }
-                            className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full w-5 h-5 text-xs flex items-center justify-center hover:bg-red-600"
-                            title="Remove image"
+                            className="text-xs text-brand-red hover:underline"
                           >
-                            ×
+                            Remove
                           </button>
                         </div>
                       )}
-                      <p className="text-xs text-muted-foreground mt-1">
-                        Shown on the Products page and Purchase page.
-                      </p>
                     </div>
                     <div className="sm:col-span-2">
                       <Label className="text-brand-blue font-semibold">
@@ -1516,7 +1829,7 @@ export default function AdminDashboardPage() {
                             description: e.target.value,
                           }))
                         }
-                        placeholder="Short description of the service..."
+                        placeholder="Short description..."
                         required
                         rows={2}
                         className="mt-1"
@@ -1550,7 +1863,6 @@ export default function AdminDashboardPage() {
                 </form>
               </CardContent>
             </Card>
-
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {services.map((svc) => (
                 <Card
@@ -1567,18 +1879,30 @@ export default function AdminDashboardPage() {
                   <CardContent className="p-4">
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-1">
+                        <div className="flex items-center gap-2 mb-1 flex-wrap">
                           <span className="text-2xl">{svc.icon}</span>
                           <p className="font-bold text-brand-blue">
                             {svc.name}
                           </p>
+                          <span
+                            className={`text-xs px-2 py-0.5 rounded-full font-bold ${svc.inStock !== false ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}
+                          >
+                            {svc.inStock !== false ? "In Stock" : "Sold Out"}
+                          </span>
                         </div>
                         <p className="text-sm text-muted-foreground mb-2">
                           {svc.description}
                         </p>
-                        <span className="inline-block bg-brand-gold/10 text-brand-gold border border-brand-gold/30 px-2 py-0.5 rounded text-xs font-bold">
-                          {svc.price}
-                        </span>
+                        <div className="flex gap-2 flex-wrap">
+                          <span className="inline-block bg-brand-gold/10 text-brand-gold border border-brand-gold/30 px-2 py-0.5 rounded text-xs font-bold">
+                            {svc.price}
+                          </span>
+                          {(svc.discount || 0) > 0 && (
+                            <span className="inline-block bg-red-100 text-brand-red border border-brand-red/20 px-2 py-0.5 rounded text-xs font-bold">
+                              {svc.discount}% OFF
+                            </span>
+                          )}
+                        </div>
                       </div>
                       <div className="flex gap-1">
                         <Button
@@ -1606,7 +1930,385 @@ export default function AdminDashboardPage() {
           </div>
         )}
 
-        {/* ===== BANNER IMAGE TAB ===== */}
+        {/* ===== BILLING ITEMS TAB ===== */}
+        {view === "list" && tab === "items" && (
+          <div className="animate-fade-in">
+            <div className="mb-6">
+              <h1 className="font-heading font-bold text-2xl text-brand-blue">
+                Billing Items
+              </h1>
+              <p className="text-muted-foreground text-sm">
+                {billingItems.length} items • Purchase price is hidden from
+                invoices
+              </p>
+            </div>
+            <Card className="border-2 border-border shadow-card mb-8">
+              <CardHeader>
+                <CardTitle className="text-brand-blue">
+                  {editingBillingItem ? "Edit Item" : "Add New Item"}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <form onSubmit={handleSaveBillingItem} className="space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <Label className="text-brand-blue font-semibold">
+                        Item Name *
+                      </Label>
+                      <Input
+                        value={billingItemForm.name}
+                        onChange={(e) =>
+                          setBillingItemForm((p) => ({
+                            ...p,
+                            name: e.target.value,
+                          }))
+                        }
+                        placeholder="e.g. Visiting Cards (100 pcs)"
+                        required
+                        className="mt-1"
+                        data-ocid="admin.items.input"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-brand-blue font-semibold">
+                        Category
+                      </Label>
+                      <Input
+                        value={billingItemForm.category}
+                        onChange={(e) =>
+                          setBillingItemForm((p) => ({
+                            ...p,
+                            category: e.target.value,
+                          }))
+                        }
+                        placeholder="e.g. Printing, Designing"
+                        className="mt-1"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-brand-blue font-semibold">
+                        Selling Price (Rs) *
+                      </Label>
+                      <Input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={billingItemForm.sellingPrice}
+                        onChange={(e) =>
+                          setBillingItemForm((p) => ({
+                            ...p,
+                            sellingPrice:
+                              Number.parseFloat(e.target.value) || 0,
+                          }))
+                        }
+                        required
+                        className="mt-1"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-brand-blue font-semibold flex items-center gap-2">
+                        Purchase Price (Rs) *{" "}
+                        <span className="text-xs bg-brand-red/10 text-brand-red px-2 py-0.5 rounded-full">
+                          Admin Only
+                        </span>
+                      </Label>
+                      <Input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={billingItemForm.purchasePrice}
+                        onChange={(e) =>
+                          setBillingItemForm((p) => ({
+                            ...p,
+                            purchasePrice:
+                              Number.parseFloat(e.target.value) || 0,
+                          }))
+                        }
+                        required
+                        className="mt-1"
+                      />
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Not shown on customer invoices. Used for profit reports.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex gap-3">
+                    <Button
+                      type="submit"
+                      className="bg-brand-blue text-white hover:bg-brand-blue-dark"
+                      data-ocid="admin.items.submit_button"
+                    >
+                      <Plus className="w-4 h-4 mr-2" />{" "}
+                      {editingBillingItem ? "Update Item" : "Add Item"}
+                    </Button>
+                    {editingBillingItem && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => {
+                          setEditingBillingItem(null);
+                          setBillingItemForm(emptyBillingItem);
+                        }}
+                        data-ocid="admin.items.cancel_button"
+                      >
+                        Cancel
+                      </Button>
+                    )}
+                  </div>
+                </form>
+              </CardContent>
+            </Card>
+            {billingItems.length === 0 ? (
+              <Card
+                className="border-dashed border-2"
+                data-ocid="admin.items.empty_state"
+              >
+                <CardContent className="p-12 text-center">
+                  <Package className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
+                  <p className="text-muted-foreground">
+                    No billing items yet. Add items to use them in invoices.
+                  </p>
+                </CardContent>
+              </Card>
+            ) : (
+              <Card className="border-2 border-border shadow-card">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="bg-brand-blue text-white">
+                        <th className="text-left p-3">Item Name</th>
+                        <th className="text-left p-3">Category</th>
+                        <th className="text-right p-3">Selling Price</th>
+                        <th className="text-right p-3">
+                          Purchase Price (Admin)
+                        </th>
+                        <th className="text-right p-3">Profit Margin</th>
+                        <th className="text-center p-3">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {billingItems.map((item, i) => (
+                        <tr
+                          key={item.id}
+                          className="border-b border-border hover:bg-muted/40"
+                          data-ocid={`admin.items.row.${i + 1}`}
+                        >
+                          <td className="p-3 font-semibold">{item.name}</td>
+                          <td className="p-3 text-muted-foreground">
+                            {item.category || "—"}
+                          </td>
+                          <td className="p-3 text-right font-bold text-brand-gold">
+                            Rs {item.sellingPrice.toLocaleString()}
+                          </td>
+                          <td className="p-3 text-right text-brand-red font-semibold">
+                            Rs {item.purchasePrice.toLocaleString()}
+                          </td>
+                          <td className="p-3 text-right text-green-600 font-semibold">
+                            Rs{" "}
+                            {(
+                              item.sellingPrice - item.purchasePrice
+                            ).toLocaleString()}
+                            {item.sellingPrice > 0 && (
+                              <span className="text-xs text-muted-foreground ml-1">
+                                (
+                                {Math.round(
+                                  ((item.sellingPrice - item.purchasePrice) /
+                                    item.sellingPrice) *
+                                    100,
+                                )}
+                                %)
+                              </span>
+                            )}
+                          </td>
+                          <td className="p-3 text-center">
+                            <div className="flex items-center justify-center gap-1">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleEditBillingItem(item)}
+                                className="border-brand-gold text-brand-gold hover:bg-brand-gold hover:text-white h-7 px-2"
+                                data-ocid={`admin.items.edit_button.${i + 1}`}
+                              >
+                                <Pencil className="w-3 h-3" />
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleDeleteBillingItem(item.id)}
+                                className="border-brand-red text-brand-red hover:bg-brand-red hover:text-white h-7 px-2"
+                                data-ocid={`admin.items.delete_button.${i + 1}`}
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </Card>
+            )}
+          </div>
+        )}
+
+        {/* ===== REPORTS TAB ===== */}
+        {view === "list" && tab === "reports" && (
+          <div className="animate-fade-in">
+            <div className="mb-6">
+              <h1 className="font-heading font-bold text-2xl text-brand-blue">
+                Sales Reports
+              </h1>
+              <p className="text-muted-foreground text-sm">
+                View sales, profit, and performance data
+              </p>
+            </div>
+            <div className="flex gap-3 mb-6">
+              {REPORT_PERIODS.map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => setReportPeriod(p)}
+                  className={`px-5 py-2 rounded-full font-semibold text-sm capitalize transition-colors ${reportPeriod === p ? "bg-brand-blue text-white" : "bg-muted text-foreground hover:bg-muted/70"}`}
+                  data-ocid="admin.reports.tab"
+                >
+                  {p}
+                </button>
+              ))}
+            </div>
+            {(() => {
+              const { filtered, totalSales, totalCost, totalProfit } =
+                calcReportData();
+              return (
+                <>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
+                    <Card className="border-2 border-brand-blue/30 shadow-card">
+                      <CardContent className="p-5 text-center">
+                        <TrendingUp className="w-8 h-8 text-brand-blue mx-auto mb-2" />
+                        <p className="text-3xl font-heading font-bold text-brand-blue">
+                          {filtered.length}
+                        </p>
+                        <p className="text-muted-foreground text-sm mt-1">
+                          Invoices
+                        </p>
+                      </CardContent>
+                    </Card>
+                    <Card className="border-2 border-brand-gold/30 shadow-card">
+                      <CardContent className="p-5 text-center">
+                        <FileText className="w-8 h-8 text-brand-gold mx-auto mb-2" />
+                        <p className="text-2xl font-heading font-bold text-brand-gold">
+                          Rs {totalSales.toLocaleString()}
+                        </p>
+                        <p className="text-muted-foreground text-sm mt-1">
+                          Total Sales
+                        </p>
+                      </CardContent>
+                    </Card>
+                    <Card className="border-2 border-brand-red/30 shadow-card">
+                      <CardContent className="p-5 text-center">
+                        <Package className="w-8 h-8 text-brand-red mx-auto mb-2" />
+                        <p className="text-2xl font-heading font-bold text-brand-red">
+                          Rs {totalCost.toLocaleString()}
+                        </p>
+                        <p className="text-muted-foreground text-sm mt-1">
+                          Total Cost
+                        </p>
+                      </CardContent>
+                    </Card>
+                    <Card className="border-2 border-green-300 shadow-card">
+                      <CardContent className="p-5 text-center">
+                        <TrendingUp className="w-8 h-8 text-green-600 mx-auto mb-2" />
+                        <p
+                          className={`text-2xl font-heading font-bold ${totalProfit >= 0 ? "text-green-600" : "text-red-600"}`}
+                        >
+                          Rs {totalProfit.toLocaleString()}
+                        </p>
+                        <p className="text-muted-foreground text-sm mt-1">
+                          {totalProfit >= 0 ? "Profit" : "Loss"}
+                        </p>
+                      </CardContent>
+                    </Card>
+                  </div>
+                  {filtered.length === 0 ? (
+                    <Card
+                      className="border-dashed border-2"
+                      data-ocid="admin.reports.empty_state"
+                    >
+                      <CardContent className="p-12 text-center">
+                        <BarChart3 className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
+                        <p className="text-muted-foreground">
+                          No invoices found for the selected period.
+                        </p>
+                      </CardContent>
+                    </Card>
+                  ) : (
+                    <Card className="border-2 border-border shadow-card">
+                      <CardHeader>
+                        <CardTitle className="text-brand-blue text-base">
+                          Invoice Details —{" "}
+                          {reportPeriod.charAt(0).toUpperCase() +
+                            reportPeriod.slice(1)}{" "}
+                          Report
+                        </CardTitle>
+                      </CardHeader>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="bg-muted border-b">
+                              <th className="text-left p-3">Invoice #</th>
+                              <th className="text-left p-3">Customer</th>
+                              <th className="text-left p-3">Phone</th>
+                              <th className="text-left p-3">Date</th>
+                              <th className="text-right p-3">Total (Rs)</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {filtered.map((inv, i) => (
+                              <tr
+                                key={inv.id}
+                                className="border-b border-border hover:bg-muted/30"
+                                data-ocid={`admin.reports.row.${i + 1}`}
+                              >
+                                <td className="p-3 font-semibold text-brand-blue">
+                                  {inv.id}
+                                </td>
+                                <td className="p-3">{inv.customerName}</td>
+                                <td className="p-3 text-muted-foreground">
+                                  {inv.phone || "—"}
+                                </td>
+                                <td className="p-3 text-muted-foreground">
+                                  {inv.date}
+                                </td>
+                                <td className="p-3 text-right font-bold text-brand-gold">
+                                  {inv.grandTotal.toLocaleString()}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                          <tfoot>
+                            <tr className="bg-brand-blue/10 font-bold">
+                              <td
+                                colSpan={4}
+                                className="p-3 text-right text-brand-blue"
+                              >
+                                Total:
+                              </td>
+                              <td className="p-3 text-right text-brand-gold">
+                                {totalSales.toLocaleString()}
+                              </td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
+                    </Card>
+                  )}
+                </>
+              );
+            })()}
+          </div>
+        )}
+
+        {/* ===== BANNER TAB ===== */}
         {view === "list" && tab === "banner" && (
           <div className="animate-fade-in">
             <div className="mb-6">
@@ -1659,6 +2361,7 @@ export default function AdminDashboardPage() {
           </div>
         )}
 
+        {/* ===== LOGO TAB ===== */}
         {view === "list" && tab === "logo" && (
           <div className="animate-fade-in">
             <div className="mb-6">
@@ -1666,8 +2369,8 @@ export default function AdminDashboardPage() {
                 Logo Management
               </h1>
               <p className="text-muted-foreground text-sm">
-                Upload a new logo. It will automatically update everywhere on
-                the website and on all invoices.
+                Upload a new logo. Updates everywhere on the website and
+                invoices.
               </p>
             </div>
             <Card className="border-2 border-border shadow-card max-w-2xl">
@@ -1699,8 +2402,7 @@ export default function AdminDashboardPage() {
                     data-ocid="admin.logo.upload_button"
                   />
                   <p className="text-xs text-muted-foreground mt-1">
-                    Recommended: PNG with transparent background, square or wide
-                    format.
+                    Recommended: PNG with transparent background.
                   </p>
                 </div>
                 <Button
@@ -1709,6 +2411,60 @@ export default function AdminDashboardPage() {
                   data-ocid="admin.logo.save_button"
                 >
                   <Image className="w-4 h-4 mr-2" /> Save Logo
+                </Button>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {/* ===== ABOUT STATS TAB ===== */}
+        {view === "list" && tab === "about" && (
+          <div className="animate-fade-in">
+            <div className="mb-6">
+              <h1 className="font-heading font-bold text-2xl text-brand-blue">
+                About Page Stats
+              </h1>
+              <p className="text-muted-foreground text-sm">
+                Update Experience and Clients figures. Changes are reflected
+                instantly.
+              </p>
+            </div>
+            <Card className="border-2 border-border shadow-card max-w-2xl">
+              <CardContent className="p-6 space-y-5">
+                <div>
+                  <Label className="text-brand-blue font-semibold">
+                    Years of Experience
+                  </Label>
+                  <Input
+                    value={aboutYears}
+                    onChange={(e) => setAboutYears(e.target.value)}
+                    placeholder="e.g. 10+"
+                    className="mt-1"
+                    data-ocid="admin.about.input"
+                  />
+                </div>
+                <div>
+                  <Label className="text-brand-blue font-semibold">
+                    Number of Happy Customers
+                  </Label>
+                  <Input
+                    value={aboutClients}
+                    onChange={(e) => setAboutClients(e.target.value)}
+                    placeholder="e.g. 1000+"
+                    className="mt-1"
+                    data-ocid="admin.about.input"
+                  />
+                </div>
+                <Button
+                  onClick={async () => {
+                    await saveAboutStats(actor, aboutYears, aboutClients);
+                    invalidate(["aboutStats"]);
+                    alert("About page stats updated!");
+                  }}
+                  className="bg-brand-blue text-white hover:bg-brand-blue-dark w-full"
+                  data-ocid="admin.about.save_button"
+                >
+                  <Info className="w-4 h-4 mr-2" /> Save About Stats
                 </Button>
               </CardContent>
             </Card>
@@ -1810,6 +2566,7 @@ export default function AdminDashboardPage() {
                   </div>
                 </CardContent>
               </Card>
+
               <Card className="border-2 border-border shadow-card">
                 <CardHeader className="flex flex-row items-center justify-between">
                   <CardTitle className="text-brand-blue">
@@ -1824,6 +2581,12 @@ export default function AdminDashboardPage() {
                   </Button>
                 </CardHeader>
                 <CardContent>
+                  {billingItems.length > 0 && (
+                    <p className="text-xs text-muted-foreground mb-3 bg-brand-gold/10 px-3 py-2 rounded-lg">
+                      💡 Type in the "Particular" field to search and select
+                      billing items automatically
+                    </p>
+                  )}
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
                       <thead>
@@ -1831,95 +2594,154 @@ export default function AdminDashboardPage() {
                           <th className="text-left p-2 w-10">Sr#</th>
                           <th className="text-left p-2">Particular</th>
                           <th className="text-left p-2 w-20">Qty</th>
-                          <th className="text-left p-2 w-36">
-                            Quality (free text)
-                          </th>
+                          <th className="text-left p-2 w-36">Quality</th>
                           <th className="text-left p-2 w-24">Rate (Rs)</th>
                           <th className="text-right p-2 w-28">Total (Rs)</th>
                           <th className="w-10" />
                         </tr>
                       </thead>
                       <tbody>
-                        {items.map((item, i) => (
-                          <tr key={item.rowId} className="border-b">
-                            <td className="p-2 text-muted-foreground">
-                              {i + 1}
-                            </td>
-                            <td className="p-2">
-                              <Input
-                                value={item.particular}
-                                onChange={(e) =>
-                                  updateItem(
-                                    item.rowId,
-                                    "particular",
-                                    e.target.value,
-                                  )
-                                }
-                                placeholder="Item description"
-                                className="h-8"
-                              />
-                            </td>
-                            <td className="p-2">
-                              <Input
-                                type="number"
-                                min="1"
-                                value={item.quantity}
-                                onChange={(e) =>
-                                  updateItem(
-                                    item.rowId,
-                                    "quantity",
-                                    Number.parseFloat(e.target.value) || 1,
-                                  )
-                                }
-                                className="h-8"
-                              />
-                            </td>
-                            <td className="p-2">
-                              <Input
-                                value={item.quality}
-                                onChange={(e) =>
-                                  updateItem(
-                                    item.rowId,
-                                    "quality",
-                                    e.target.value,
-                                  )
-                                }
-                                placeholder="e.g. Premium"
-                                className="h-8"
-                              />
-                            </td>
-                            <td className="p-2">
-                              <Input
-                                type="number"
-                                min="0"
-                                step="0.01"
-                                value={item.rate}
-                                onChange={(e) =>
-                                  updateItem(
-                                    item.rowId,
-                                    "rate",
-                                    Number.parseFloat(e.target.value) || 0,
-                                  )
-                                }
-                                className="h-8"
-                              />
-                            </td>
-                            <td className="p-2 text-right font-semibold text-brand-blue">
-                              {(item.quantity * item.rate).toFixed(2)}
-                            </td>
-                            <td className="p-2">
-                              {items.length > 1 && (
-                                <button
-                                  type="button"
-                                  onClick={() => removeItem(item.rowId)}
-                                  className="text-destructive hover:text-destructive/70"
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </button>
-                              )}
-                            </td>
-                          </tr>
-                        ))}
+                        {items.map((item, i) => {
+                          const search =
+                            itemSearches[item.rowId] ?? item.particular;
+                          const showDropdown =
+                            itemDropdownOpen[item.rowId] &&
+                            billingItems.length > 0 &&
+                            search.length > 0;
+                          const filteredBItems = billingItems.filter((bi) =>
+                            bi.name
+                              .toLowerCase()
+                              .includes(search.toLowerCase()),
+                          );
+                          return (
+                            <tr key={item.rowId} className="border-b">
+                              <td className="p-2 text-muted-foreground">
+                                {i + 1}
+                              </td>
+                              <td className="p-2 relative">
+                                <Input
+                                  value={search}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    setItemSearches((prev) => ({
+                                      ...prev,
+                                      [item.rowId]: val,
+                                    }));
+                                    updateItem(item.rowId, "particular", val);
+                                    setItemDropdownOpen((prev) => ({
+                                      ...prev,
+                                      [item.rowId]: true,
+                                    }));
+                                    if (!val)
+                                      updateItem(
+                                        item.rowId,
+                                        "billingItemId",
+                                        0,
+                                      );
+                                  }}
+                                  onFocus={() =>
+                                    setItemDropdownOpen((prev) => ({
+                                      ...prev,
+                                      [item.rowId]: true,
+                                    }))
+                                  }
+                                  onBlur={() =>
+                                    setTimeout(
+                                      () =>
+                                        setItemDropdownOpen((prev) => ({
+                                          ...prev,
+                                          [item.rowId]: false,
+                                        })),
+                                      200,
+                                    )
+                                  }
+                                  placeholder="Item description or search..."
+                                  className="h-8"
+                                />
+                                {showDropdown && filteredBItems.length > 0 && (
+                                  <div className="absolute z-30 left-0 top-full mt-1 w-full bg-white border border-border rounded-lg shadow-lg max-h-40 overflow-y-auto">
+                                    {filteredBItems.map((bi) => (
+                                      <button
+                                        key={bi.id}
+                                        type="button"
+                                        className="w-full text-left px-3 py-2 text-xs hover:bg-brand-gold/10 flex items-center justify-between"
+                                        onMouseDown={() =>
+                                          selectBillingItem(item.rowId, bi)
+                                        }
+                                      >
+                                        <span className="font-semibold">
+                                          {bi.name}
+                                        </span>
+                                        <span className="text-brand-gold font-bold">
+                                          Rs {bi.sellingPrice.toLocaleString()}
+                                        </span>
+                                      </button>
+                                    ))}
+                                  </div>
+                                )}
+                              </td>
+                              <td className="p-2">
+                                <Input
+                                  type="number"
+                                  min="1"
+                                  value={item.quantity}
+                                  onChange={(e) =>
+                                    updateItem(
+                                      item.rowId,
+                                      "quantity",
+                                      Number.parseFloat(e.target.value) || 1,
+                                    )
+                                  }
+                                  className="h-8"
+                                />
+                              </td>
+                              <td className="p-2">
+                                <Input
+                                  value={item.quality}
+                                  onChange={(e) =>
+                                    updateItem(
+                                      item.rowId,
+                                      "quality",
+                                      e.target.value,
+                                    )
+                                  }
+                                  placeholder="e.g. Premium"
+                                  className="h-8"
+                                />
+                              </td>
+                              <td className="p-2">
+                                <Input
+                                  type="number"
+                                  min="0"
+                                  step="0.01"
+                                  value={item.rate}
+                                  onChange={(e) =>
+                                    updateItem(
+                                      item.rowId,
+                                      "rate",
+                                      Number.parseFloat(e.target.value) || 0,
+                                    )
+                                  }
+                                  className="h-8"
+                                />
+                              </td>
+                              <td className="p-2 text-right font-semibold text-brand-blue">
+                                {(item.quantity * item.rate).toFixed(2)}
+                              </td>
+                              <td className="p-2">
+                                {items.length > 1 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => removeItem(item.rowId)}
+                                    className="text-destructive hover:text-destructive/70"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
@@ -1996,6 +2818,7 @@ export default function AdminDashboardPage() {
                   </div>
                 </CardContent>
               </Card>
+
               <Card className="border-2 border-border shadow-card">
                 <CardHeader>
                   <CardTitle className="text-brand-blue">

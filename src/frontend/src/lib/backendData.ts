@@ -5,7 +5,14 @@
  * All data written to backend is also cached in localStorage.
  */
 
-import { ExternalBlob, type backendInterface } from "@/backend";
+import {
+  type Invoice as BackendInvoice,
+  type CustomerAccount,
+  type CustomerOrder,
+  ExternalBlob,
+  type SecurityAnswers,
+  type backendInterface,
+} from "@/backend";
 import {
   type BillingItem as FEBillingItem,
   type ContactMessage as FEContactMessage,
@@ -836,6 +843,105 @@ export async function saveAboutStats(
       await actor.setAboutStats({ experience, clientsCount });
     } catch (e) {
       console.warn("saveAboutStats backend error", e);
+    }
+  }
+}
+
+// -----------------------------------------------------------------------
+// Customers
+// -----------------------------------------------------------------------
+
+export async function registerCustomerAccount(
+  actor: backendInterface | null,
+  customer: CustomerAccount,
+): Promise<void> {
+  if (actor) {
+    try {
+      await actor.registerCustomer(customer);
+    } catch (e) {
+      console.warn("registerCustomerAccount error", e);
+      throw e;
+    }
+  }
+}
+
+export async function fetchCustomers(
+  actor: backendInterface | null,
+): Promise<CustomerAccount[]> {
+  try {
+    if (actor) {
+      const customers = await actor.getAllCustomers();
+      return customers;
+    }
+  } catch (e) {
+    console.warn("fetchCustomers backend error", e);
+  }
+  return [];
+}
+
+export async function fetchCustomerOrders(
+  actor: backendInterface | null,
+  customerId: bigint,
+): Promise<CustomerOrder[]> {
+  try {
+    if (actor) {
+      return await actor.getOrdersByCustomer(customerId);
+    }
+  } catch (e) {
+    console.warn("fetchCustomerOrders backend error", e);
+  }
+  return [];
+}
+
+export async function fetchCustomerInvoices(
+  actor: backendInterface | null,
+  phone: string,
+): Promise<BackendInvoice[]> {
+  try {
+    if (actor) {
+      return await actor.getInvoicesByCustomerPhone(phone);
+    }
+  } catch (e) {
+    console.warn("fetchCustomerInvoices backend error", e);
+  }
+  return [];
+}
+
+export async function fetchSecurityAnswers(
+  actor: backendInterface | null,
+): Promise<SecurityAnswers | null> {
+  try {
+    if (actor) {
+      return await actor.getSecurityAnswers();
+    }
+  } catch (e) {
+    console.warn("fetchSecurityAnswers backend error", e);
+  }
+  return null;
+}
+
+export async function saveSecurityAnswers(
+  actor: backendInterface | null,
+  answers: SecurityAnswers,
+): Promise<void> {
+  if (actor) {
+    try {
+      await actor.setSecurityAnswers(answers);
+    } catch (e) {
+      console.warn("saveSecurityAnswers error", e);
+    }
+  }
+}
+
+export async function updateCustomerLastLoginTime(
+  actor: backendInterface | null,
+  id: bigint,
+): Promise<void> {
+  if (actor) {
+    try {
+      await actor.updateCustomerLastLogin(id);
+    } catch (e) {
+      console.warn("updateCustomerLastLogin error", e);
     }
   }
 }

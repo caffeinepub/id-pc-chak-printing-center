@@ -11,8 +11,9 @@ import {
 } from "@/hooks/useQueries";
 import { backendAddOrder, backendAddReview } from "@/lib/backendData";
 import { getReviews, saveReviews } from "@/lib/storage";
-import { Link, useParams } from "@tanstack/react-router";
+import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import {
+  LogIn,
   MessageCircle,
   PackageX,
   Phone,
@@ -35,6 +36,8 @@ export default function PurchasePage() {
   const [qty, setQty] = useState(1);
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [showLoginPrompt, setShowLoginPrompt] = useState(false);
+  const navigate = useNavigate();
 
   // Review form state
   const [reviewName, setReviewName] = useState("");
@@ -69,6 +72,12 @@ export default function PurchasePage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    // Check if customer is logged in
+    const customerSession = localStorage.getItem("customerSession");
+    if (!customerSession) {
+      setShowLoginPrompt(true);
+      return;
+    }
     if (!name.trim() || !phone.trim()) {
       toast.error("Please enter your name and phone number.");
       return;
@@ -372,6 +381,42 @@ export default function PurchasePage() {
           </CardContent>
         </Card>
 
+        {/* Login Prompt Modal */}
+        {showLoginPrompt && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4"
+            data-ocid="purchase.login_modal.dialog"
+          >
+            <div className="bg-white rounded-2xl p-8 max-w-sm w-full shadow-2xl text-center animate-fade-in-up">
+              <div className="w-14 h-14 rounded-full bg-brand-blue flex items-center justify-center mx-auto mb-4">
+                <LogIn className="w-7 h-7 text-white" />
+              </div>
+              <h3 className="font-heading font-bold text-xl text-brand-blue mb-2">
+                Login Required
+              </h3>
+              <p className="text-muted-foreground text-sm mb-6">
+                Please login to your account to place an order.
+              </p>
+              <div className="flex flex-col gap-3">
+                <Button
+                  onClick={() => navigate({ to: "/customer/login" })}
+                  className="bg-brand-blue text-white w-full btn-3d btn-3d-blue"
+                  data-ocid="purchase.login_modal.confirm_button"
+                >
+                  Go to Login
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => setShowLoginPrompt(false)}
+                  className="w-full"
+                  data-ocid="purchase.login_modal.cancel_button"
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
         {/* Contact section */}
         <div
           className="bg-brand-blue rounded-2xl p-6 text-white text-center animate-fade-in-up mb-10"

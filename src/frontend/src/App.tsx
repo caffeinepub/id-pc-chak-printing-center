@@ -7,6 +7,8 @@ import AdminDashboardPage from "@/pages/AdminDashboardPage";
 import AdminLoginPage from "@/pages/AdminLoginPage";
 import BillCheckPage from "@/pages/BillCheckPage";
 import ContactPage from "@/pages/ContactPage";
+import CustomerDashboardPage from "@/pages/CustomerDashboardPage";
+import CustomerLoginPage from "@/pages/CustomerLoginPage";
 import HomePage from "@/pages/HomePage";
 import ProductsPage from "@/pages/ProductsPage";
 import PurchasePage from "@/pages/PurchasePage";
@@ -93,6 +95,12 @@ const billCheckRoute = createRoute({
   component: BillCheckPage,
 });
 
+const customerDashboardRoute = createRoute({
+  getParentRoute: () => publicLayoutRoute,
+  path: "/customer/dashboard",
+  component: CustomerDashboardPage,
+});
+
 const adminRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/admin",
@@ -111,6 +119,12 @@ const adminResetRoute = createRoute({
   component: ResetPasswordPage,
 });
 
+const customerLoginRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/customer/login",
+  component: CustomerLoginPage,
+});
+
 const routeTree = rootRoute.addChildren([
   publicLayoutRoute.addChildren([
     homeRoute,
@@ -119,10 +133,12 @@ const routeTree = rootRoute.addChildren([
     productsRoute,
     productDetailRoute,
     billCheckRoute,
+    customerDashboardRoute,
   ]),
   adminRoute,
   adminDashboardRoute,
   adminResetRoute,
+  customerLoginRoute,
 ]);
 
 const hashHistory = createHashHistory();

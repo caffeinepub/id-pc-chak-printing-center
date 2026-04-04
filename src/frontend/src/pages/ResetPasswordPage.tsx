@@ -2,151 +2,105 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  canRequestOTP,
-  generateOTP,
-  getMaskedPhone,
-  getOTPAttempts,
-  getOTPCooldownSeconds,
-  getOTPExpirySeconds,
-  logAuditEvent,
-  verifyOTP,
-} from "@/lib/otp";
+import { useActor } from "@/hooks/useActor";
+import { fetchSecurityAnswers } from "@/lib/backendData";
 import { setAdminPassword } from "@/lib/storage";
 import { Link, useNavigate } from "@tanstack/react-router";
 import {
   AlertCircle,
-  ArrowLeft,
   CheckCircle,
-  KeyRound,
+  HelpCircle,
   Lock,
-  RefreshCw,
-  Smartphone,
+  ShieldQuestion,
+  User,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
 type ResetStep = 1 | 2 | 3;
 
+// Default security answers (stored in backend; these are the defaults for FYP demo)
+const DEFAULT_SECURITY_ANSWERS = {
+  answer1: "24-07-2004", // Girlfriend's DOB
+  answer2: "4330384851864", // Mother's CNIC
+  answer3: "03113639008", // First Mobile Number
+};
+
 export default function ResetPasswordPage() {
   const navigate = useNavigate();
+  const { actor } = useActor();
   const [step, setStep] = useState<ResetStep>(1);
 
-  // Step 1 state
+  // Step 1: Verify username
+  const [usernameInput, setUsernameInput] = useState("");
   const [step1Error, setStep1Error] = useState("");
 
-  // Step 2 state
-  const [currentOTP, setCurrentOTP] = useState("");
-  const [otpInput, setOtpInput] = useState("");
-  const [otpError, setOtpError] = useState("");
-  const [expirySeconds, setExpirySeconds] = useState(0);
-  const [cooldownSeconds, setCooldownSeconds] = useState(0);
-  const [attemptsLeft, setAttemptsLeft] = useState(3);
-  const [isLocked, setIsLocked] = useState(false);
+  // Step 2: Security questions
+  const [ans1, setAns1] = useState("");
+  const [ans2, setAns2] = useState("");
+  const [ans3, setAns3] = useState("");
+  const [questionsError, setQuestionsError] = useState("");
+  const [verifying, setVerifying] = useState(false);
 
-  // Step 3 state
+  // Step 3: New password
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [passwordError, setPasswordError] = useState("");
   const [success, setSuccess] = useState(false);
 
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
   useEffect(() => {
     document.title = "Reset Password - ID&PC Chak";
   }, []);
 
-  // Countdown timer for OTP step
-  useEffect(() => {
-    if (step !== 2) return;
-
-    timerRef.current = setInterval(() => {
-      setExpirySeconds(getOTPExpirySeconds());
-      setCooldownSeconds(getOTPCooldownSeconds());
-      setAttemptsLeft(3 - getOTPAttempts());
-    }, 1000);
-
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-    };
-  }, [step]);
-
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-    };
-  }, []);
-
-  function handleRequestOTP() {
-    setStep1Error("");
-    try {
-      const code = generateOTP();
-      setCurrentOTP(code);
-      setOtpInput("");
-      setOtpError("");
-      setIsLocked(false);
-      setAttemptsLeft(3);
-      setExpirySeconds(getOTPExpirySeconds());
-      setCooldownSeconds(getOTPCooldownSeconds());
-      setStep(2);
-    } catch (err) {
-      if (err instanceof Error && err.message === "rate_limited") {
-        const remaining = getOTPCooldownSeconds();
-        setStep1Error(
-          `Please wait ${remaining} seconds before requesting a new OTP.`,
-        );
-      } else {
-        setStep1Error("Failed to generate OTP. Please try again.");
-      }
-    }
-  }
-
-  function handleVerifyOTP(e: React.FormEvent) {
+  function handleVerifyUsername(e: React.FormEvent) {
     e.preventDefault();
-    if (isLocked) return;
-    const result = verifyOTP(otpInput);
-    if (result.success) {
-      logAuditEvent(
-        "PASSWORD_RESET_OTP_SUCCESS",
-        `OTP verified for password reset at ${new Date().toLocaleString()}`,
-      );
-      setStep(3);
-    } else if (result.error === "expired") {
-      setOtpError("OTP has expired. Please request a new one.");
-      setIsLocked(true);
-    } else if (result.error === "locked") {
-      setOtpError(
-        "Too many failed attempts. Please wait and request a new OTP.",
-      );
-      setIsLocked(true);
-    } else if (result.error === "no_otp") {
-      setOtpError("No OTP found. Please go back and request a new OTP.");
-    } else {
-      const remaining = 3 - getOTPAttempts();
-      setAttemptsLeft(remaining);
-      setOtpError(
-        `Incorrect OTP. ${remaining} attempt${remaining !== 1 ? "s" : ""} remaining.`,
-      );
+    setStep1Error("");
+    if (usernameInput.trim() !== "Kamran911") {
+      setStep1Error("Username not recognized. Please try again.");
+      return;
     }
+    setStep(2);
   }
 
-  function handleResendOTP() {
-    if (!canRequestOTP()) return;
+  async function handleVerifyAnswers(e: React.FormEvent) {
+    e.preventDefault();
+    setQuestionsError("");
+    setVerifying(true);
     try {
-      const code = generateOTP();
-      setCurrentOTP(code);
-      setOtpInput("");
-      setOtpError("");
-      setIsLocked(false);
-      setAttemptsLeft(3);
-      setExpirySeconds(getOTPExpirySeconds());
-      setCooldownSeconds(getOTPCooldownSeconds());
-    } catch {
-      setOtpError("Failed to resend OTP. Please try again.");
+      // Fetch stored security answers from backend (or use defaults)
+      let stored = DEFAULT_SECURITY_ANSWERS;
+      const backendAnswers = await fetchSecurityAnswers(actor);
+      if (backendAnswers?.answer1) {
+        stored = {
+          answer1: backendAnswers.answer1,
+          answer2: backendAnswers.answer2,
+          answer3: backendAnswers.answer3,
+        };
+      }
+
+      const normalize = (s: string) =>
+        s.trim().toLowerCase().replace(/\s+/g, "");
+
+      const a1Match = normalize(ans1) === normalize(stored.answer1);
+      const a2Match = normalize(ans2) === normalize(stored.answer2);
+      const a3Match = normalize(ans3) === normalize(stored.answer3);
+
+      if (!a1Match || !a2Match || !a3Match) {
+        setQuestionsError(
+          "Incorrect answers. Please check all 3 answers and try again.",
+        );
+        return;
+      }
+
+      setStep(3);
+    } catch (err) {
+      console.error("Security question verify error", err);
+      setQuestionsError("Verification failed. Please try again.");
+    } finally {
+      setVerifying(false);
     }
   }
 
-  function handleReset(e: React.FormEvent) {
+  function handleResetPassword(e: React.FormEvent) {
     e.preventDefault();
     setPasswordError("");
     if (newPassword.length < 6) {
@@ -158,10 +112,11 @@ export default function ResetPasswordPage() {
       return;
     }
     setAdminPassword(newPassword);
-    logAuditEvent(
-      "PASSWORD_RESET_SUCCESS",
-      `Admin password reset successfully at ${new Date().toLocaleString()}`,
-    );
+    if (actor) {
+      actor
+        .setAdminPassword(newPassword)
+        .catch((err) => console.warn("setAdminPassword backend error", err));
+    }
     setSuccess(true);
     setTimeout(() => navigate({ to: "/admin" }), 3000);
   }
@@ -184,7 +139,7 @@ export default function ResetPasswordPage() {
             Reset Password
           </h1>
           <p className="text-white/60 mt-1">
-            Verify via OTP to reset your password
+            Answer security questions to reset your password
           </p>
         </div>
 
@@ -200,8 +155,7 @@ export default function ResetPasswordPage() {
                   Password Reset!
                 </h2>
                 <p className="text-muted-foreground text-sm">
-                  Your password has been changed successfully. Redirecting to
-                  login...
+                  Your password has been changed. Redirecting to login...
                 </p>
               </div>
             ) : (
@@ -211,25 +165,16 @@ export default function ResetPasswordPage() {
                   {stepLabels[step]}
                 </p>
 
-                {/* STEP 1: Request OTP */}
+                {/* STEP 1: Verify username */}
                 {step === 1 && (
                   <div>
                     <h2 className="font-heading font-bold text-lg text-brand-blue mb-1 flex items-center gap-2">
-                      <Smartphone className="w-5 h-5 text-brand-gold" />
-                      Reset via OTP
+                      <User className="w-5 h-5 text-brand-gold" />
+                      Verify Admin Username
                     </h2>
                     <p className="text-muted-foreground text-sm mb-6">
-                      An OTP will be sent to your registered phone number.
+                      Enter your admin username to begin the reset process.
                     </p>
-
-                    <div className="bg-muted rounded-lg p-4 text-center mb-6">
-                      <p className="text-xs text-muted-foreground mb-1">
-                        Registered Phone
-                      </p>
-                      <p className="font-heading font-bold text-lg text-brand-blue tracking-wider">
-                        {getMaskedPhone()}
-                      </p>
-                    </div>
 
                     {step1Error && (
                       <div
@@ -241,145 +186,113 @@ export default function ResetPasswordPage() {
                       </div>
                     )}
 
-                    <Button
-                      onClick={handleRequestOTP}
-                      className="w-full bg-brand-blue text-white hover:bg-brand-blue-dark font-semibold h-12 btn-3d btn-3d-blue"
-                      data-ocid="reset_password.request_otp.button"
-                    >
-                      Send OTP to my phone
-                    </Button>
+                    <form onSubmit={handleVerifyUsername} className="space-y-4">
+                      <div>
+                        <Label className="text-brand-blue font-semibold">
+                          Admin Username
+                        </Label>
+                        <Input
+                          value={usernameInput}
+                          onChange={(e) => setUsernameInput(e.target.value)}
+                          placeholder="Enter your username"
+                          required
+                          autoComplete="username"
+                          className="mt-1"
+                          data-ocid="reset_password.username.input"
+                        />
+                      </div>
+                      <Button
+                        type="submit"
+                        className="w-full bg-brand-blue text-white hover:bg-brand-blue-dark font-semibold h-12 btn-3d btn-3d-blue"
+                        data-ocid="reset_password.username.submit_button"
+                      >
+                        Continue
+                      </Button>
+                    </form>
                   </div>
                 )}
 
-                {/* STEP 2: Verify OTP */}
+                {/* STEP 2: Security Questions */}
                 {step === 2 && (
                   <div>
                     <h2 className="font-heading font-bold text-lg text-brand-blue mb-1 flex items-center gap-2">
-                      <KeyRound className="w-5 h-5 text-brand-gold" />
-                      Enter OTP
+                      <ShieldQuestion className="w-5 h-5 text-brand-gold" />
+                      Security Questions
                     </h2>
                     <p className="text-muted-foreground text-sm mb-5">
-                      OTP sent to{" "}
-                      <span className="font-semibold text-brand-blue">
-                        {getMaskedPhone()}
-                      </span>
+                      Answer all 3 questions correctly to proceed.
                     </p>
 
-                    {/* Demo OTP Display Box */}
-                    <div
-                      className="bg-brand-gold/20 border border-brand-gold rounded-lg p-4 text-center mb-5"
-                      data-ocid="reset_password.otp.panel"
-                    >
-                      <p className="text-xs font-semibold text-brand-gold-dark uppercase tracking-wider mb-1">
-                        🔐 Demo Mode
-                      </p>
-                      <p className="text-sm text-foreground/70 mb-2">
-                        Your OTP is:
-                      </p>
-                      <p className="font-heading font-bold text-4xl tracking-[0.35em] text-brand-blue">
-                        {currentOTP}
-                      </p>
-                      <p className="text-xs text-muted-foreground mt-2">
-                        (In production, this would be sent via SMS)
-                      </p>
-                    </div>
-
-                    {/* Expiry countdown */}
-                    <div className="flex justify-between text-xs text-muted-foreground mb-4">
-                      <span
-                        className={
-                          expirySeconds > 0 && expirySeconds <= 30
-                            ? "text-destructive font-semibold"
-                            : ""
-                        }
-                        data-ocid="reset_password.otp.loading_state"
-                      >
-                        ⏱ OTP expires in:{" "}
-                        <strong>
-                          {expirySeconds > 0 ? `${expirySeconds}s` : "Expired"}
-                        </strong>
-                      </span>
-                      <span>
-                        Attempts remaining:{" "}
-                        <strong
-                          className={
-                            attemptsLeft <= 1 ? "text-destructive" : ""
-                          }
-                        >
-                          {attemptsLeft}
-                        </strong>
-                      </span>
-                    </div>
-
-                    {/* Error message */}
-                    {otpError && (
+                    {questionsError && (
                       <div
                         className="flex items-start gap-2 bg-destructive/10 border border-destructive/30 rounded-lg p-3 mb-4"
-                        data-ocid="reset_password.otp.error_state"
+                        data-ocid="reset_password.questions.error_state"
                       >
                         <AlertCircle className="w-4 h-4 text-destructive flex-shrink-0 mt-0.5" />
-                        <p className="text-destructive text-sm">{otpError}</p>
+                        <p className="text-destructive text-sm">
+                          {questionsError}
+                        </p>
                       </div>
                     )}
 
-                    {/* OTP form */}
                     <form
-                      onSubmit={handleVerifyOTP}
-                      className="space-y-4"
-                      data-ocid="reset_password.modal"
+                      onSubmit={handleVerifyAnswers}
+                      className="space-y-5"
+                      data-ocid="reset_password.questions.modal"
                     >
-                      <div>
-                        <Label
-                          htmlFor="reset-otp-input"
-                          className="text-brand-blue font-semibold"
-                        >
-                          4-Digit OTP Code
+                      <div className="space-y-1.5">
+                        <Label className="text-brand-blue font-semibold flex items-center gap-1.5">
+                          <HelpCircle className="w-3.5 h-3.5 text-brand-gold" />
+                          What is your Girlfriend&apos;s Date of Birth?
                         </Label>
                         <Input
-                          id="reset-otp-input"
-                          type="text"
-                          inputMode="numeric"
-                          pattern="[0-9]{4}"
-                          maxLength={4}
-                          value={otpInput}
-                          onChange={(e) =>
-                            setOtpInput(
-                              e.target.value.replace(/\D/g, "").slice(0, 4),
-                            )
-                          }
-                          placeholder="Enter 4-digit OTP"
-                          className="mt-1 text-center text-2xl font-bold tracking-[0.4em] h-14"
+                          value={ans1}
+                          onChange={(e) => setAns1(e.target.value)}
+                          placeholder="e.g. 24-07-2004"
                           required
-                          disabled={isLocked}
-                          autoComplete="one-time-code"
-                          data-ocid="reset_password.otp.input"
+                          className="mt-1"
+                          data-ocid="reset_password.answer1.input"
+                        />
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <Label className="text-brand-blue font-semibold flex items-center gap-1.5">
+                          <HelpCircle className="w-3.5 h-3.5 text-brand-gold" />
+                          What is your Mother&apos;s CNIC Number?
+                        </Label>
+                        <Input
+                          value={ans2}
+                          onChange={(e) => setAns2(e.target.value)}
+                          placeholder="e.g. 4330384851864"
+                          required
+                          className="mt-1"
+                          data-ocid="reset_password.answer2.input"
+                        />
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <Label className="text-brand-blue font-semibold flex items-center gap-1.5">
+                          <HelpCircle className="w-3.5 h-3.5 text-brand-gold" />
+                          What was your First Mobile Number?
+                        </Label>
+                        <Input
+                          value={ans3}
+                          onChange={(e) => setAns3(e.target.value)}
+                          placeholder="e.g. 03113639008"
+                          required
+                          className="mt-1"
+                          data-ocid="reset_password.answer3.input"
                         />
                       </div>
 
                       <Button
                         type="submit"
-                        disabled={isLocked || otpInput.length < 4}
-                        className="w-full bg-brand-blue text-white hover:bg-brand-blue-dark font-semibold h-12 btn-3d btn-3d-blue disabled:opacity-50"
-                        data-ocid="reset_password.otp.submit_button"
+                        disabled={verifying}
+                        className="w-full bg-brand-blue text-white hover:bg-brand-blue-dark font-semibold h-12 btn-3d btn-3d-blue"
+                        data-ocid="reset_password.verify_answers.submit_button"
                       >
-                        Verify OTP
+                        {verifying ? "Verifying..." : "Verify Answers"}
                       </Button>
-                    </form>
-
-                    {/* Resend OTP */}
-                    <div className="flex items-center justify-between mt-4">
-                      <button
-                        type="button"
-                        onClick={handleResendOTP}
-                        disabled={!canRequestOTP() || cooldownSeconds > 0}
-                        className="flex items-center gap-1.5 text-sm font-medium text-brand-gold hover:underline disabled:text-muted-foreground disabled:no-underline disabled:cursor-not-allowed"
-                        data-ocid="reset_password.resend_otp.button"
-                      >
-                        <RefreshCw className="w-3.5 h-3.5" />
-                        {cooldownSeconds > 0
-                          ? `Resend in ${cooldownSeconds}s`
-                          : "Resend OTP"}
-                      </button>
 
                       <button
                         type="button"
@@ -387,10 +300,9 @@ export default function ResetPasswordPage() {
                         className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-brand-blue transition-colors"
                         data-ocid="reset_password.back.button"
                       >
-                        <ArrowLeft className="w-3.5 h-3.5" />
-                        Back
+                        ← Back
                       </button>
-                    </div>
+                    </form>
                   </div>
                 )}
 
@@ -402,7 +314,7 @@ export default function ResetPasswordPage() {
                       New Password
                     </h2>
                     <p className="text-muted-foreground text-sm mb-6">
-                      OTP verified. Enter and confirm your new password.
+                      Identity verified. Enter your new password.
                     </p>
 
                     {passwordError && (
@@ -417,7 +329,7 @@ export default function ResetPasswordPage() {
                       </div>
                     )}
 
-                    <form onSubmit={handleReset} className="space-y-4">
+                    <form onSubmit={handleResetPassword} className="space-y-4">
                       <div>
                         <Label className="text-brand-blue font-semibold">
                           New Password

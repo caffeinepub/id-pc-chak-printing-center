@@ -1,3 +1,4 @@
+import type { CustomerAccount } from "@/backend";
 import InvoiceView from "@/components/InvoiceView";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -34,6 +35,7 @@ import {
   backendUpdateOrder,
   backendUpdateReview,
   backendUpdateService,
+  fetchCustomers,
   saveAboutStats,
   saveBannerImage,
   saveLogo,
@@ -128,7 +130,8 @@ type Tab =
   | "reports"
   | "banner"
   | "logo"
-  | "about";
+  | "about"
+  | "customers";
 type View = "list" | "create" | "view-invoice";
 
 interface ItemRow extends Omit<InvoiceItem, "srNo" | "total"> {
@@ -238,6 +241,10 @@ export default function AdminDashboardPage() {
 
   // Reports
   const [reportPeriod, setReportPeriod] = useState<ReportPeriod>("monthly");
+  const [customers, setCustomers] = useState<CustomerAccount[]>([]);
+  const [customersLoading, setCustomersLoading] = useState(false);
+  const [selectedCustomer, setSelectedCustomer] =
+    useState<CustomerAccount | null>(null);
 
   const unreadCount = contactMessages.filter((m) => !m.isRead).length;
   const pendingReviewCount = pendingReviews.length;
@@ -257,6 +264,15 @@ export default function AdminDashboardPage() {
     setAboutClients(localStorage.getItem("idpc_num_clients") || "1000+");
   }, [navigate]);
 
+  // Load customers when customers tab becomes active
+  useEffect(() => {
+    if (tab !== "customers") return;
+    setCustomersLoading(true);
+    fetchCustomers(actor)
+      .then((data) => setCustomers(data))
+      .catch((err) => console.error("fetchCustomers error", err))
+      .finally(() => setCustomersLoading(false));
+  }, [tab, actor]);
   function logout() {
     sessionStorage.removeItem("isAdminLoggedIn");
     navigate({ to: "/admin" });
@@ -776,6 +792,12 @@ export default function AdminDashboardPage() {
     },
     { key: "logo", label: "Logo", icon: <Image className="w-4 h-4" /> },
     { key: "about", label: "About Stats", icon: <Info className="w-4 h-4" /> },
+    {
+      key: "customers",
+      label: "Customers",
+      icon: <Users className="w-4 h-4" />,
+      badge: customers.length || undefined,
+    },
   ];
 
   return (
@@ -2468,6 +2490,186 @@ export default function AdminDashboardPage() {
                 </Button>
               </CardContent>
             </Card>
+          </div>
+        )}
+
+        {/* ===== CUSTOMERS TAB ===== */}
+        {view === "list" && tab === "customers" && (
+          <div className="animate-fade-in">
+            <div className="mb-6 flex items-center justify-between">
+              <div>
+                <h1 className="font-heading font-bold text-2xl text-brand-blue">
+                  Customers
+                </h1>
+                <p className="text-muted-foreground text-sm">
+                  Registered customer accounts and activity
+                </p>
+              </div>
+              <div className="bg-brand-blue/10 text-brand-blue font-heading font-bold text-2xl rounded-2xl px-5 py-3 border border-brand-blue/20">
+                {customers.length}{" "}
+                <span className="text-sm font-normal">total</span>
+              </div>
+            </div>
+            {customersLoading ? (
+              <div
+                className="flex items-center justify-center py-16"
+                data-ocid="admin.customers.loading_state"
+              >
+                <div className="w-8 h-8 border-4 border-brand-blue border-t-transparent rounded-full animate-spin" />
+              </div>
+            ) : customers.length === 0 ? (
+              <div
+                className="text-center py-16 border-2 border-dashed border-border rounded-2xl text-muted-foreground"
+                data-ocid="admin.customers.empty_state"
+              >
+                <Users className="w-12 h-12 mx-auto mb-3 opacity-30" />
+                <p className="font-semibold">No customers yet</p>
+                <p className="text-sm">
+                  Customer accounts will appear here once registered.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {customers.map((c, i) => (
+                  <Card
+                    key={c.id.toString()}
+                    className="border-2 border-border shadow-card card-3d"
+                    data-ocid={`admin.customers.item.${i + 1}`}
+                  >
+                    <CardContent className="p-5">
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1 flex-wrap">
+                            <p className="font-heading font-bold text-brand-blue">
+                              {c.name}
+                            </p>
+                            {c.isGoogleUser && (
+                              <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
+                                Google
+                              </span>
+                            )}
+                            {!c.isActive && (
+                              <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full">
+                                Inactive
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-sm text-muted-foreground">
+                            {c.email}
+                          </p>
+                          <p className="text-sm text-muted-foreground">
+                            {c.phone}
+                          </p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Joined:{" "}
+                            {new Date(Number(c.createdAt)).toLocaleDateString()}
+                          </p>
+                          {Number(c.lastLoginAt) > 0 && (
+                            <p className="text-xs text-muted-foreground">
+                              Last login:{" "}
+                              {new Date(
+                                Number(c.lastLoginAt),
+                              ).toLocaleDateString()}
+                            </p>
+                          )}
+                        </div>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setSelectedCustomer(c)}
+                          className="flex-shrink-0"
+                          data-ocid={`admin.customers.edit_button.${i + 1}`}
+                        >
+                          <Eye className="w-4 h-4 mr-1" /> View
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+            {/* Customer detail modal */}
+            {selectedCustomer && (
+              <div
+                className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4"
+                data-ocid="admin.customers.modal"
+              >
+                <div className="bg-white rounded-2xl p-8 max-w-md w-full shadow-2xl max-h-[90vh] overflow-y-auto">
+                  <div className="flex items-center justify-between mb-6">
+                    <h3 className="font-heading font-bold text-xl text-brand-blue">
+                      Customer Details
+                    </h3>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedCustomer(null)}
+                      className="text-muted-foreground hover:text-foreground"
+                      data-ocid="admin.customers.close_button"
+                    >
+                      <XCircle className="w-6 h-6" />
+                    </button>
+                  </div>
+                  <div className="space-y-3 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Name</span>
+                      <span className="font-semibold">
+                        {selectedCustomer.name}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Email</span>
+                      <span className="font-semibold">
+                        {selectedCustomer.email}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Phone</span>
+                      <span className="font-semibold">
+                        {selectedCustomer.phone}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Registered</span>
+                      <span className="font-semibold">
+                        {new Date(
+                          Number(selectedCustomer.createdAt),
+                        ).toLocaleDateString()}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Last Login</span>
+                      <span className="font-semibold">
+                        {Number(selectedCustomer.lastLoginAt) > 0
+                          ? new Date(
+                              Number(selectedCustomer.lastLoginAt),
+                            ).toLocaleDateString()
+                          : "Never"}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Status</span>
+                      <span
+                        className={`font-semibold ${selectedCustomer.isActive ? "text-green-600" : "text-red-600"}`}
+                      >
+                        {selectedCustomer.isActive ? "Active" : "Inactive"}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Login Type</span>
+                      <span className="font-semibold">
+                        {selectedCustomer.isGoogleUser ? "Google" : "Email"}
+                      </span>
+                    </div>
+                  </div>
+                  <Button
+                    className="w-full mt-6 bg-brand-blue text-white"
+                    onClick={() => setSelectedCustomer(null)}
+                    data-ocid="admin.customers.dialog.close_button"
+                  >
+                    Close
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
         )}
 

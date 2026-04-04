@@ -22,6 +22,7 @@ export interface CustomerOrder {
     date: string;
     notes: string;
     quantity: bigint;
+    customerId?: bigint;
     serviceId: string;
     phone: string;
     totalPrice: bigint;
@@ -35,21 +36,6 @@ export interface InvoiceItem {
     particular: string;
     quantity: string;
 }
-export interface ContactMessage {
-    id: bigint;
-    date: string;
-    name: string;
-    isRead: boolean;
-    message: string;
-    phone: string;
-}
-export interface BillingItem {
-    id: bigint;
-    purchasePrice: bigint;
-    name: string;
-    sellingPrice: bigint;
-    category: string;
-}
 export interface Service {
     id: bigint;
     inStock: boolean;
@@ -60,16 +46,9 @@ export interface Service {
     image: ExternalBlob;
     price: string;
 }
-export interface Employee {
-    id: bigint;
-    age: bigint;
-    cnic: string;
-    designation: string;
-    fullName: string;
-    fatherName: string;
-    bloodGroup: string;
-    mobile: string;
-    photo: ExternalBlob;
+export interface AboutStats {
+    clientsCount: string;
+    experience: string;
 }
 export interface Invoice {
     id: bigint;
@@ -83,9 +62,48 @@ export interface Invoice {
     items: Array<InvoiceItem>;
     advance: bigint;
 }
-export interface AboutStats {
-    clientsCount: string;
-    experience: string;
+export interface BillingItem {
+    id: bigint;
+    purchasePrice: bigint;
+    name: string;
+    sellingPrice: bigint;
+    category: string;
+}
+export interface ContactMessage {
+    id: bigint;
+    date: string;
+    name: string;
+    isRead: boolean;
+    message: string;
+    phone: string;
+}
+export interface SecurityAnswers {
+    answer1: string;
+    answer2: string;
+    answer3: string;
+}
+export interface CustomerAccount {
+    id: bigint;
+    googleId: string;
+    lastLoginAt: bigint;
+    name: string;
+    createdAt: bigint;
+    isActive: boolean;
+    email: string;
+    passwordHash: string;
+    isGoogleUser: boolean;
+    phone: string;
+}
+export interface Employee {
+    id: bigint;
+    age: bigint;
+    cnic: string;
+    designation: string;
+    fullName: string;
+    fatherName: string;
+    bloodGroup: string;
+    mobile: string;
+    photo: ExternalBlob;
 }
 export interface Review {
     id: bigint;
@@ -105,6 +123,7 @@ export interface backendInterface {
     addService(s: Service): Promise<void>;
     deleteBillingItem(id: bigint): Promise<boolean>;
     deleteContactMessage(id: bigint): Promise<boolean>;
+    deleteCustomer(id: bigint): Promise<boolean>;
     deleteCustomerOrder(id: bigint): Promise<boolean>;
     deleteEmployee(id: bigint): Promise<boolean>;
     deleteInvoice(id: bigint): Promise<boolean>;
@@ -115,6 +134,7 @@ export interface backendInterface {
     getAllBillingItems(): Promise<Array<BillingItem>>;
     getAllContactMessages(): Promise<Array<ContactMessage>>;
     getAllCustomerOrders(): Promise<Array<CustomerOrder>>;
+    getAllCustomers(): Promise<Array<CustomerAccount>>;
     getAllEmployees(): Promise<Array<Employee>>;
     getAllInvoices(): Promise<Array<Invoice>>;
     getAllReviews(): Promise<Array<Review>>;
@@ -122,18 +142,27 @@ export interface backendInterface {
     getApprovedReviews(): Promise<Array<Review>>;
     getBillingItem(id: bigint): Promise<BillingItem | null>;
     getContactMessage(id: bigint): Promise<ContactMessage | null>;
+    getCustomerByEmail(email: string): Promise<CustomerAccount | null>;
+    getCustomerById(id: bigint): Promise<CustomerAccount>;
     getCustomerOrder(id: bigint): Promise<CustomerOrder | null>;
     getEmployee(id: bigint): Promise<Employee | null>;
     getInvoice(id: bigint): Promise<Invoice | null>;
+    getInvoicesByCustomerPhone(phone: string): Promise<Array<Invoice>>;
     getLogo(): Promise<string>;
+    getOrdersByCustomer(customerId: bigint): Promise<Array<CustomerOrder>>;
     getPendingReviews(): Promise<Array<Review>>;
     getReview(id: bigint): Promise<Review | null>;
+    getSecurityAnswers(): Promise<SecurityAnswers>;
     getService(id: bigint): Promise<Service | null>;
     markContactMessageRead(id: bigint): Promise<boolean>;
+    registerCustomer(c: CustomerAccount): Promise<void>;
     setAboutStats(stats: AboutStats): Promise<void>;
     setAdminPassword(v: string): Promise<void>;
     setLogo(v: string): Promise<void>;
+    setSecurityAnswers(s: SecurityAnswers): Promise<void>;
     updateBillingItem(id: bigint, item: BillingItem): Promise<boolean>;
+    updateCustomer(id: bigint, c: CustomerAccount): Promise<boolean>;
+    updateCustomerLastLogin(id: bigint): Promise<void>;
     updateCustomerOrder(id: bigint, o: CustomerOrder): Promise<boolean>;
     updateEmployee(id: bigint, e: Employee): Promise<boolean>;
     updateInvoice(id: bigint, inv: Invoice): Promise<boolean>;

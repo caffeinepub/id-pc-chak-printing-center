@@ -1,39 +1,53 @@
 # ID&PC Chak - Printing Center
 
 ## Current State
-Full-stack printing shop website with React/TypeScript frontend and Motoko backend. Current backend supports: logo (text), bannerImage (blob), adminPassword, services (with blob image), employees, reviews, invoices, customerOrders, contactMessages. Frontend has Home, About, Products, Purchase, Contact, Bill Check, Admin Dashboard, Admin Login, Reset Password pages.
 
-Backend already has blob-storage component (for service images, banner), and standard CRUD for all entities.
+The app has:
+- Admin login with OTP (2-step: credentials → OTP shown on screen)
+- Password reset via OTP (3 steps: send OTP → verify → new password)
+- No customer login/account system
+- BillCheckPage: public invoice lookup by userId + invoice number (no login required)
+- PurchasePage: anyone can place orders (no login gate)
+- Admin dashboard with full management: services, employees, invoices, orders, reviews, billing items, reports, contact messages
+- Backend: ICP Motoko canister with CRUD for all entities. No authentication on any endpoint.
+- No customer data model (no customer profiles, passwords, sessions)
 
 ## Requested Changes (Diff)
 
 ### Add
-1. **Product Card Redesign** — New card layout with "In Stock" / "Sold Out" label badge at top, multiple images support (images array on Service), product name/price/discount/finalPrice visible on card, NO description on card. Clicking opens product detail page with full description + order form.
-2. **Stock Status** — Simple toggle on each service: `inStock: Bool`. Admin can toggle In Stock / Sold Out from Services tab.
-3. **Discount on Services** — Add `discount: Nat` (percentage) and `finalPrice: Text` fields to Service type.
-4. **Item Management for Billing** — New `BillingItem` type: id, name, sellingPrice (Nat), purchasePrice (Nat, hidden from invoice), category (Text). CRUD in backend. Admin can add/edit/delete items. While creating invoice, items are auto-suggested via search/dropdown.
-5. **Profit & Reports** — Daily/Weekly/Monthly reports based on invoice data matched against BillingItems. Report shows: total sales, total purchase cost, total profit.
-6. **Reviews with Admin Approval** — Add `status: Text` field to Review (`"pending"` | `"approved"` | `"rejected"`). User-submitted reviews go in as `"pending"`. Admin can approve/reject. Only approved reviews show on About and Product pages.
-7. **About Stats Admin Control** — Add `aboutStats` (experience: Text, clientsCount: Text) to backend. Admin can update from About Stats tab. Already partially implemented (tab exists), needs full backend persistence.
-8. **Order System** — Orders already exist. Ensure auto-generated Order Number (ORD-XXXX format). Admin can view orders and generate invoice from order.
-9. **Reviews on Product Detail Page** — Approved reviews shown on product detail/purchase page.
+- **Customer data model**: `CustomerAccount` type in backend with fields: id (Nat), name (Text), phone (Text), email (Text), passwordHash (Text), googleId (Option Text), isGoogleUser (Bool), createdAt (Int), lastLoginAt (Int)
+- **Backend functions**: `registerCustomer`, `loginCustomer` (returns token/id), `getCustomerByEmail`, `getCustomerById`, `getAllCustomers`, `updateCustomer`, `deleteCustomer`, `getCustomerOrders` (by customer id), `getCustomerInvoices` (by customer phone)
+- **Security questions storage on backend**: `getSecurityAnswers`, `setSecurityAnswers` — store the 3 fixed answers (DOB, CNIC, mobile) so password reset works by matching them
+- **Customer login page** (`/customer/login`): email + password form with OTP verification step. Also shows "Continue with Google" button (simulated for FYP demo — button present but shows info message that Google OAuth requires production setup). OTP shown on screen in demo box.
+- **Customer register page** (`/customer/register`): name, email, phone, password fields
+- **Customer dashboard page** (`/customer/dashboard`): shows logged-in customer's invoices, orders, order status (Completed/Pending), total work summary
+- **Password reset with security questions**: Replace OTP-based reset with a 3-question form. Questions are hardcoded labels but answers are stored/matched in backend. All 3 must match to allow reset.
+- **Admin panel "Customers" tab**: shows all registered customers, their login history (lastLoginAt), order count, invoice count
+- **Login-required gate on PurchasePage**: if customer is not logged in, show login prompt before allowing order placement
+- **BillCheckPage**: keep working without login (just invoice number lookup). No change needed.
 
 ### Modify
-- Service type: add `inStock: Bool`, `discount: Nat`, images array (keep existing `image` blob for compatibility).
-- Invoice creation: show item suggestions (dropdown from BillingItems), purchase price hidden from invoice output.
-- About page: show approved reviews section. Show experience and clients count from backend.
-- Admin Dashboard: add Items Management tab, add Reports tab (daily/weekly/monthly), Reviews tab shows pending reviews for approval.
-- Products page: new card design with label, discount badge, no description.
+- **ResetPasswordPage**: Replace 3-step OTP flow with 3-step security questions flow:
+  1. Enter admin username to identify
+  2. Answer 3 security questions (all 3 must match stored answers)
+  3. Enter new password
+- **AdminLoginPage**: Keep OTP flow as-is. No change.
+- **App.tsx**: Add new routes: `/customer/login`, `/customer/register`, `/customer/dashboard`
+- **Navbar**: Add "Customer Login" button/link in the nav
+- **backendData.ts**: Add customer CRUD functions
+- **AdminDashboardPage**: Add "Customers" tab showing registered customers and their activity
+- **PurchasePage**: Check if customer is logged in (localStorage `customerSession`); if not, show modal/prompt to login before submitting order. Link order to customer account on submit.
 
 ### Remove
-- Auto-generated About stats (hardcoded 10 years experience, 1000+ clients) — replace with backend-driven values.
+- OTP logic from `ResetPasswordPage` (replace entirely with security questions)
 
 ## Implementation Plan
-1. Update Motoko backend: add BillingItem type + CRUD, add aboutStats getter/setter, add `status` field to Review, add `inStock`/`discount` fields to Service.
-2. Update frontend:
-   a. New product card component with In Stock/Sold Out label, discount badge, no description, image slider.
-   b. Admin Dashboard: new Items tab (add/edit/delete billing items), new Reports tab (daily/weekly/monthly profit), Reviews tab shows pending + approve/reject buttons, About Stats tab already exists but now calls real backend.
-   c. Invoice form: item search/dropdown auto-suggest from BillingItems list.
-   d. About page: dynamic experience/clients from backend, approved reviews section.
-   e. Product detail page: approved reviews section at bottom.
-   f. Services tab in Admin: stock status toggle, discount field.
+
+1. **Backend (Motoko)**: Add `CustomerAccount` type, security answers storage, and all customer-related canister functions.
+2. **backendData.ts**: Add `fetchCustomers`, `registerCustomer`, `loginCustomer`, `fetchCustomerOrders`, `fetchCustomerInvoices`, `getSecurityAnswers`, `setSecurityAnswers` functions.
+3. **ResetPasswordPage**: Rewrite to use 3 security questions instead of OTP.
+4. **New pages**: `CustomerLoginPage`, `CustomerRegisterPage`, `CustomerDashboardPage`.
+5. **App.tsx**: Register new customer routes.
+6. **Navbar**: Add customer login/account link.
+7. **PurchasePage**: Add login gate before order submission.
+8. **AdminDashboardPage**: Add Customers tab.

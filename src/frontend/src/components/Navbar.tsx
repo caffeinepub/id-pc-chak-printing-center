@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { useLogo } from "@/hooks/useQueries";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
-import { Menu, X } from "lucide-react";
+import { Menu, User, X } from "lucide-react";
 import { useState } from "react";
 
 const navLinks = [
@@ -12,12 +12,31 @@ const navLinks = [
   { label: "Bill Check", href: "/bill-check" },
 ];
 
+interface CustomerSession {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+}
+
+function getCustomerSession(): CustomerSession | null {
+  const raw = localStorage.getItem("customerSession");
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as CustomerSession;
+  } catch {
+    return null;
+  }
+}
+
 export default function Navbar() {
   const [menuOpen, setMenuOpen] = useState(false);
   const routerState = useRouterState();
   const pathname = routerState.location.pathname;
   const navigate = useNavigate();
   const { data: logo } = useLogo();
+  // Derived directly from localStorage on each render (re-reads when pathname changes)
+  const customerSession = getCustomerSession();
 
   if (pathname.startsWith("/admin")) return null;
 
@@ -61,15 +80,28 @@ export default function Navbar() {
 
           {/* Right action buttons */}
           <div className="hidden md:flex items-center gap-3">
-            <Button
-              onClick={() => navigate({ to: "/bill-check" })}
-              className="bg-brand-gold text-brand-blue hover:bg-brand-gold-dark font-semibold text-sm rounded-full px-4 h-9 btn-3d btn-3d-gold"
-            >
-              Customer Login
-            </Button>
+            {customerSession ? (
+              <Button
+                onClick={() => navigate({ to: "/customer/dashboard" })}
+                className="bg-brand-gold text-brand-blue hover:bg-brand-gold-dark font-semibold text-sm rounded-full px-4 h-9 btn-3d btn-3d-gold flex items-center gap-2"
+                data-ocid="navbar.customer_dashboard.button"
+              >
+                <User className="w-4 h-4" />
+                {customerSession.name.split(" ")[0]}
+              </Button>
+            ) : (
+              <Button
+                onClick={() => navigate({ to: "/customer/login" })}
+                className="bg-brand-gold text-brand-blue hover:bg-brand-gold-dark font-semibold text-sm rounded-full px-4 h-9 btn-3d btn-3d-gold"
+                data-ocid="navbar.customer_login.button"
+              >
+                My Account
+              </Button>
+            )}
             <Button
               onClick={() => navigate({ to: "/admin" })}
               className="bg-brand-red text-white hover:opacity-90 text-sm rounded-full px-4 h-9 font-semibold btn-3d"
+              data-ocid="navbar.admin_panel.button"
             >
               Admin Panel
             </Button>
@@ -111,21 +143,37 @@ export default function Navbar() {
             </Link>
           ))}
           <div className="flex flex-col gap-2 mt-3">
-            <Button
-              onClick={() => {
-                navigate({ to: "/bill-check" });
-                setMenuOpen(false);
-              }}
-              className="bg-brand-gold text-brand-blue hover:bg-brand-gold-dark font-semibold w-full btn-3d btn-3d-gold"
-            >
-              Customer Login
-            </Button>
+            {customerSession ? (
+              <Button
+                onClick={() => {
+                  navigate({ to: "/customer/dashboard" });
+                  setMenuOpen(false);
+                }}
+                className="bg-brand-gold text-brand-blue hover:bg-brand-gold-dark font-semibold w-full btn-3d btn-3d-gold flex items-center gap-2"
+                data-ocid="navbar.customer_dashboard.button"
+              >
+                <User className="w-4 h-4" />{" "}
+                {customerSession.name.split(" ")[0]}&apos;s Account
+              </Button>
+            ) : (
+              <Button
+                onClick={() => {
+                  navigate({ to: "/customer/login" });
+                  setMenuOpen(false);
+                }}
+                className="bg-brand-gold text-brand-blue hover:bg-brand-gold-dark font-semibold w-full btn-3d btn-3d-gold"
+                data-ocid="navbar.customer_login.button"
+              >
+                My Account
+              </Button>
+            )}
             <Button
               onClick={() => {
                 navigate({ to: "/admin" });
                 setMenuOpen(false);
               }}
               className="bg-brand-red text-white hover:opacity-90 font-semibold w-full btn-3d"
+              data-ocid="navbar.admin_panel.button"
             >
               Admin Panel
             </Button>

@@ -1,5 +1,7 @@
 import Map "mo:core/Map";
+import Runtime "mo:core/Runtime";
 import Nat "mo:core/Nat";
+import Time "mo:core/Time";
 import Iter "mo:core/Iter";
 import Array "mo:core/Array";
 import MixinStorage "blob-storage/Mixin";
@@ -78,6 +80,7 @@ actor {
     totalPrice : Nat;
     date : Text;
     status : Text;
+    customerId : ?Nat;
   };
 
   type ContactMessage = {
@@ -102,6 +105,25 @@ actor {
     clientsCount : Text;
   };
 
+  type CustomerAccount = {
+    id : Nat;
+    name : Text;
+    email : Text;
+    phone : Text;
+    passwordHash : Text;
+    googleId : Text;
+    isGoogleUser : Bool;
+    createdAt : Int;
+    lastLoginAt : Int;
+    isActive : Bool;
+  };
+
+  type SecurityAnswers = {
+    answer1 : Text;
+    answer2 : Text;
+    answer3 : Text;
+  };
+
   // ===== Persistent State =====
 
   var logo : Text = "";
@@ -113,7 +135,13 @@ actor {
   let customerOrders = Map.empty<Nat, CustomerOrder>();
   let contactMessages = Map.empty<Nat, ContactMessage>();
   let billingItems = Map.empty<Nat, BillingItem>();
+  let customers = Map.empty<Nat, CustomerAccount>();
   var aboutStats : ?AboutStats = null;
+  var securityAnswers : SecurityAnswers = {
+    answer1 = "24-07-2004";
+    answer2 = "4330384851864";
+    answer3 = "03113639008";
+  };
 
   // ===== Logo / Password =====
 
@@ -247,6 +275,12 @@ actor {
     } else { false };
   };
 
+  public shared ({ caller }) func getInvoicesByCustomerPhone(phone : Text) : async [Invoice] {
+    let matchingInvoices = invoices.toArray().filter(func((_, invoice)) { invoice.phone == phone });
+    let invoiceArray = matchingInvoices.map(func((_, invoice)) { invoice });
+    invoiceArray;
+  };
+
   // ===== Customer Orders CRUD =====
 
   public shared ({ caller }) func getAllCustomerOrders() : async [CustomerOrder] {
@@ -273,6 +307,17 @@ actor {
       customerOrders.remove(id);
       true;
     } else { false };
+  };
+
+  public shared ({ caller }) func getOrdersByCustomer(customerId : Nat) : async [CustomerOrder] {
+    customerOrders.values().toArray().filter(
+      func(order) {
+        switch (order.customerId) {
+          case (null) { false };
+          case (?id) { id == customerId };
+        };
+      }
+    );
   };
 
   // ===== Contact Messages CRUD =====
@@ -344,4 +389,77 @@ actor {
   public shared ({ caller }) func setAboutStats(stats : AboutStats) : async () {
     aboutStats := ?stats;
   };
+
+  // ===== Customers CRUD =====
+
+  public shared ({ caller }) func registerCustomer(c : CustomerAccount) : async () {
+    let existingCustomer = customers.toArray().find(
+      func((_, account)) { account.email == c.email }
+    );
+    switch (existingCustomer) {
+      case (?_) { Runtime.trap("Customer with email already exists!") };
+      case (null) { customers.add(c.id, c) };
+    };
+  };
+
+  public shared ({ caller }) func updateCustomer(id : Nat, c : CustomerAccount) : async Bool {
+    if (customers.containsKey(id)) {
+      customers.add(id, c);
+      true;
+    } else { false };
+  };
+
+  public shared ({ caller }) func getCustomerById(id : Nat) : async CustomerAccount {
+    switch (customers.get(id)) {
+      case (null) { Runtime.trap("Customer not found") };
+      case (?c) { c };
+    };
+  };
+
+  public shared ({ caller }) func getCustomerByEmail(email : Text) : async ?CustomerAccount {
+    let customer = customers.toArray().find(
+      func((_, account)) { account.email == email }
+    );
+    switch (customer) {
+      case (null) { null };
+      case (?(id, c)) { ?c };
+    };
+  };
+
+  public shared ({ caller }) func getAllCustomers() : async [CustomerAccount] {
+    customers.values().toArray();
+  };
+
+  public shared ({ caller }) func deleteCustomer(id : Nat) : async Bool {
+    if (customers.containsKey(id)) {
+      customers.remove(id);
+      true;
+    } else { false };
+  };
+
+  public shared ({ caller }) func updateCustomerLastLogin(id : Nat) : async () {
+    switch (customers.get(id)) {
+      case (null) { Runtime.trap("Customer not found") };
+      case (?c) {
+        customers.add(
+          id,
+          {
+            c with lastLoginAt = Time.now();
+          },
+        );
+      };
+    };
+  };
+
+  // ===== Security Answers =====
+
+  public shared ({ caller }) func setSecurityAnswers(s : SecurityAnswers) : async () {
+    securityAnswers := s;
+  };
+
+  public shared ({ caller }) func getSecurityAnswers() : async SecurityAnswers {
+    securityAnswers;
+  };
 };
+
+

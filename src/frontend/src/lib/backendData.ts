@@ -5,13 +5,12 @@
  * All data written to backend is also cached in localStorage.
  */
 
-import {
-  type Invoice as BackendInvoice,
-  type CustomerAccount,
-  type CustomerOrder,
-  ExternalBlob,
-  type SecurityAnswers,
-  type backendInterface,
+import type {
+  Invoice as BackendInvoice,
+  CustomerAccount,
+  CustomerOrder,
+  SecurityAnswers,
+  backendInterface,
 } from "@/backend";
 import {
   type BillingCustomer as FEBillingCustomer,
@@ -78,11 +77,6 @@ function idStringToBigInt(id: string): bigint {
   if (match) return BigInt(match[1]);
   const num = Number.parseInt(id, 10);
   return Number.isNaN(num) ? BigInt(Date.now()) : BigInt(num);
-}
-
-/** Create a placeholder ExternalBlob for backend fields we don't need to sync */
-function emptyBlob(): ExternalBlob {
-  return ExternalBlob.fromURL("");
 }
 
 // -----------------------------------------------------------------------
@@ -167,24 +161,12 @@ export async function fetchServices(
 ): Promise<FEService[]> {
   try {
     if (actor) {
-      const svcs = await actor.getAllServices();
-      if (svcs.length > 0) {
-        const lsServices = getServices();
-        const merged = svcs.map((svc) => {
-          const lsMatch = lsServices.find((ls) => ls.id === svc.id.toString());
-          return {
-            id: svc.id.toString(),
-            icon: svc.icon,
-            name: svc.name,
-            description: svc.description,
-            price: svc.price || "Contact for pricing",
-            image: lsMatch?.image || svc.image.getDirectURL() || "",
-            inStock: svc.inStock ?? true,
-            discount: Number(svc.discount ?? 0n),
-          } as FEService;
-        });
-        saveServices(merged);
-        return merged;
+      // Primary: use JSON storage which includes full image data
+      const json = await (actor as any).getServicesJson();
+      if (json) {
+        const services = JSON.parse(json) as FEService[];
+        saveServices(services);
+        return services;
       }
     }
   } catch (e) {
@@ -199,18 +181,15 @@ export async function backendAddService(
 ): Promise<FEService> {
   const id = BigInt(Date.now());
   const newSvc: FEService = { ...svc, id: id.toString() };
+  // Save to localStorage immediately
+  const current = getServices();
+  saveServices([...current, newSvc]);
   if (actor) {
     try {
-      await actor.addService({
-        id,
-        icon: svc.icon,
-        name: svc.name,
-        description: svc.description,
-        price: svc.price,
-        image: emptyBlob(),
-        inStock: svc.inStock ?? true,
-        discount: BigInt(svc.discount ?? 0),
-      });
+      // Save full JSON (including image) to backend
+      await (actor as any).setServicesJson(
+        JSON.stringify([...current, newSvc]),
+      );
     } catch (e) {
       console.warn("backendAddService error", e);
     }
@@ -222,18 +201,12 @@ export async function backendUpdateService(
   actor: backendInterface | null,
   svc: FEService,
 ): Promise<void> {
+  const current = getServices();
+  const updated = current.map((s) => (s.id === svc.id ? svc : s));
+  saveServices(updated);
   if (actor) {
     try {
-      await actor.updateService(BigInt(svc.id), {
-        id: BigInt(svc.id),
-        icon: svc.icon,
-        name: svc.name,
-        description: svc.description,
-        price: svc.price,
-        image: emptyBlob(),
-        inStock: svc.inStock ?? true,
-        discount: BigInt(svc.discount ?? 0),
-      });
+      await (actor as any).setServicesJson(JSON.stringify(updated));
     } catch (e) {
       console.warn("backendUpdateService error", e);
     }
@@ -244,9 +217,12 @@ export async function backendDeleteService(
   actor: backendInterface | null,
   id: string,
 ): Promise<void> {
+  const current = getServices();
+  const updated = current.filter((s) => s.id !== id);
+  saveServices(updated);
   if (actor) {
     try {
-      await actor.deleteService(BigInt(id));
+      await (actor as any).setServicesJson(JSON.stringify(updated));
     } catch (e) {
       console.warn("backendDeleteService error", e);
     }
@@ -262,29 +238,12 @@ export async function fetchEmployees(
 ): Promise<FEEmployee[]> {
   try {
     if (actor) {
-      const emps = await actor.getAllEmployees();
-      if (emps.length > 0) {
-        const lsEmployees = getEmployees();
-        const merged = emps.map((emp) => {
-          const lsMatch = lsEmployees.find((ls) => ls.id === emp.id.toString());
-          return {
-            id: emp.id.toString(),
-            fullName: emp.fullName,
-            fatherName: emp.fatherName,
-            age: String(emp.age),
-            cnic: emp.cnic,
-            mobile: emp.mobile,
-            bloodGroup: emp.bloodGroup,
-            photo: lsMatch?.photo || emp.photo.getDirectURL() || "",
-            designation: emp.designation,
-          } as FEEmployee;
-        });
-        // Also merge LS employees not in backend
-        for (const lsEmp of lsEmployees) {
-          if (!merged.find((m) => m.id === lsEmp.id)) merged.push(lsEmp);
-        }
-        saveEmployees(merged);
-        return merged;
+      // Primary: use JSON storage which includes full photo data
+      const json = await (actor as any).getEmployeesJson();
+      if (json) {
+        const employees = JSON.parse(json) as FEEmployee[];
+        saveEmployees(employees);
+        return employees;
       }
     }
   } catch (e) {
@@ -299,19 +258,13 @@ export async function backendAddEmployee(
 ): Promise<FEEmployee> {
   const id = BigInt(Date.now());
   const newEmp: FEEmployee = { ...emp, id: id.toString() };
+  const current = getEmployees();
+  saveEmployees([...current, newEmp]);
   if (actor) {
     try {
-      await actor.addEmployee({
-        id,
-        fullName: emp.fullName,
-        fatherName: emp.fatherName,
-        age: BigInt(Number(emp.age) || 0),
-        cnic: emp.cnic,
-        mobile: emp.mobile,
-        bloodGroup: emp.bloodGroup,
-        photo: emptyBlob(),
-        designation: emp.designation,
-      });
+      await (actor as any).setEmployeesJson(
+        JSON.stringify([...current, newEmp]),
+      );
     } catch (e) {
       console.warn("backendAddEmployee error", e);
     }
@@ -323,19 +276,12 @@ export async function backendUpdateEmployee(
   actor: backendInterface | null,
   emp: FEEmployee,
 ): Promise<void> {
+  const current = getEmployees();
+  const updated = current.map((e) => (e.id === emp.id ? emp : e));
+  saveEmployees(updated);
   if (actor) {
     try {
-      await actor.updateEmployee(BigInt(emp.id), {
-        id: BigInt(emp.id),
-        fullName: emp.fullName,
-        fatherName: emp.fatherName,
-        age: BigInt(Number(emp.age) || 0),
-        cnic: emp.cnic,
-        mobile: emp.mobile,
-        bloodGroup: emp.bloodGroup,
-        photo: emptyBlob(),
-        designation: emp.designation,
-      });
+      await (actor as any).setEmployeesJson(JSON.stringify(updated));
     } catch (e) {
       console.warn("backendUpdateEmployee error", e);
     }
@@ -346,9 +292,12 @@ export async function backendDeleteEmployee(
   actor: backendInterface | null,
   id: string,
 ): Promise<void> {
+  const current = getEmployees();
+  const updated = current.filter((e) => e.id !== id);
+  saveEmployees(updated);
   if (actor) {
     try {
-      await actor.deleteEmployee(BigInt(id));
+      await (actor as any).setEmployeesJson(JSON.stringify(updated));
     } catch (e) {
       console.warn("backendDeleteEmployee error", e);
     }

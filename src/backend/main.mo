@@ -5,9 +5,9 @@ import Time "mo:core/Time";
 import Iter "mo:core/Iter";
 import MixinStorage "blob-storage/Mixin";
 import Storage "blob-storage/Storage";
-import Migration "migration";
 
-(with migration = Migration.run)
+
+
 actor {
   type InvoiceItem = {
     srNo : Nat;
@@ -128,8 +128,10 @@ actor {
 
   // Persistent state variables
   var logo : Text = "";
-  var bannerImage : Text = ""; // NEW VARIABLE for banner
-  var companiesJson : Text = ""; // NEW VARIABLE for companies data
+  var bannerImage : Text = "";
+  var companiesJson : Text = "";
+  var employeesJson : Text = ""; // Full employees data with photos as JSON
+  var servicesJson : Text = "";  // Full services data with images as JSON
 
   var adminPassword : Text = "";
   let services = Map.empty<Nat, Service>();
@@ -180,6 +182,24 @@ actor {
   };
   public shared ({ caller }) func setCompaniesJson(v : Text) : async () {
     companiesJson := v;
+  };
+
+  // ===== EMPLOYEES JSON (with full photo data) =====
+
+  public shared ({ caller }) func getEmployeesJson() : async Text {
+    employeesJson;
+  };
+  public shared ({ caller }) func setEmployeesJson(v : Text) : async () {
+    employeesJson := v;
+  };
+
+  // ===== SERVICES JSON (with full image data) =====
+
+  public shared ({ caller }) func getServicesJson() : async Text {
+    servicesJson;
+  };
+  public shared ({ caller }) func setServicesJson(v : Text) : async () {
+    servicesJson := v;
   };
 
   // ===== SERVICES CRUD =====
@@ -407,7 +427,7 @@ actor {
     } else { false };
   };
 
-  // ===== BILLING CUSTOMERS CRUD (NEW) =====
+  // ===== BILLING CUSTOMERS CRUD =====
 
   public shared ({ caller }) func getAllBillingCustomers() : async [BillingCustomer] {
     billingCustomers.values().toArray();

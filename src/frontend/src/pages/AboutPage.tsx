@@ -2,10 +2,11 @@ import { Card, CardContent } from "@/components/ui/card";
 import {
   useAboutStats,
   useApprovedReviews,
+  useCompanies,
   useEmployees,
   useServices,
 } from "@/hooks/useQueries";
-import { CheckCircle2, Star, Users } from "lucide-react";
+import { Building2, CheckCircle2, Star, Users } from "lucide-react";
 import { useEffect } from "react";
 
 export default function AboutPage() {
@@ -14,6 +15,7 @@ export default function AboutPage() {
   const { data: aboutStats = { yearsExperience: "10+", numClients: "1000+" } } =
     useAboutStats();
   const { data: approvedReviews = [] } = useApprovedReviews();
+  const { data: companies = [] } = useCompanies();
 
   useEffect(() => {
     document.title = "About Us - ID&PC Chak";
@@ -146,9 +148,52 @@ export default function AboutPage() {
         </div>
       </section>
 
+      {/* Work With Companies */}
+      {companies.length > 0 && (
+        <section className="py-16 bg-background">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="text-center mb-10">
+              <p className="text-brand-gold font-semibold text-sm uppercase tracking-widest mb-2">
+                Trusted Partners
+              </p>
+              <h2 className="font-heading font-bold text-3xl text-brand-blue flex items-center justify-center gap-2">
+                <Building2 className="w-7 h-7 text-brand-gold" />
+                Work With Companies
+              </h2>
+              <p className="text-muted-foreground mt-2 text-sm">
+                We are proud to work with leading businesses and organizations.
+              </p>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-6">
+              {companies.map((company) => (
+                <div
+                  key={company.id}
+                  className="bg-background rounded-2xl p-6 text-center shadow-card border-2 border-border hover:border-brand-gold/50 transition-all duration-300 card-3d group"
+                >
+                  {company.logo ? (
+                    <img
+                      src={company.logo}
+                      alt={company.name}
+                      className="w-16 h-16 object-contain mx-auto mb-3 rounded-lg group-hover:scale-105 transition-transform"
+                    />
+                  ) : (
+                    <div className="w-16 h-16 rounded-full bg-brand-blue/10 border-2 border-brand-blue-mid flex items-center justify-center mx-auto mb-3 group-hover:scale-105 transition-transform">
+                      <Building2 className="w-7 h-7 text-brand-blue" />
+                    </div>
+                  )}
+                  <p className="font-heading font-bold text-brand-blue text-sm leading-tight">
+                    {company.name}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
+
       {/* Meet Our Team */}
       {employees.length > 0 && (
-        <section className="py-16 bg-background">
+        <section className="py-16 bg-muted/50">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="text-center mb-10">
               <p className="text-brand-gold font-semibold text-sm uppercase tracking-widest mb-2">
@@ -200,7 +245,7 @@ export default function AboutPage() {
 
       {/* Customer Reviews */}
       {approvedReviews.length > 0 && (
-        <section className="py-16 bg-muted/50">
+        <section className="py-16 bg-background">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="text-center mb-10">
               <p className="text-brand-gold font-semibold text-sm uppercase tracking-widest mb-2">

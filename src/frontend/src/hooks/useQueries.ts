@@ -7,10 +7,14 @@
  */
 
 import {
+  type Company,
+  type BillingCustomer as FEBillingCustomer,
   fetchAboutStats,
   fetchApprovedReviews,
   fetchBannerImage,
+  fetchBillingCustomers,
   fetchBillingItems,
+  fetchCompanies,
   fetchContactMessages,
   fetchEmployees,
   fetchInvoices,
@@ -33,6 +37,9 @@ import {
   getReviews,
   getServices,
 } from "@/lib/storage";
+
+// Re-export types needed by consumers
+export type { FEBillingCustomer as BillingCustomer, Company };
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useActor } from "./useActor";
 
@@ -193,6 +200,40 @@ export function useAboutStats() {
       yearsExperience: localStorage.getItem("idpc_years_experience") || "10+",
       numClients: localStorage.getItem("idpc_num_clients") || "1000+",
     }),
+    staleTime: 0,
+    refetchInterval: POLL_INTERVAL,
+    refetchIntervalInBackground: true,
+  });
+}
+
+export function useCompanies() {
+  const { actor, isFetching } = useActor();
+  return useQuery<Company[]>({
+    queryKey: ["companies"],
+    queryFn: () => fetchCompanies(actor),
+    enabled: !isFetching,
+    initialData: () => {
+      const data = localStorage.getItem("idpc_companies");
+      return data ? JSON.parse(data) : [];
+    },
+    staleTime: 0,
+    refetchInterval: POLL_INTERVAL,
+    refetchIntervalInBackground: true,
+  });
+}
+
+export function useBillingCustomers() {
+  const { actor, isFetching } = useActor();
+  return useQuery<FEBillingCustomer[]>({
+    queryKey: ["billingCustomers"],
+    queryFn: () => fetchBillingCustomers(actor),
+    enabled: !isFetching,
+    initialData: () => {
+      const data = localStorage.getItem("idpc_billing_customers");
+      if (!data) return [];
+      const parsed: FEBillingCustomer[] = JSON.parse(data);
+      return parsed.map((c) => ({ ...c, address: c.address ?? "" }));
+    },
     staleTime: 0,
     refetchInterval: POLL_INTERVAL,
     refetchIntervalInBackground: true,

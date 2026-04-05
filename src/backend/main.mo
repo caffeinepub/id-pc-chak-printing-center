@@ -3,17 +3,12 @@ import Runtime "mo:core/Runtime";
 import Nat "mo:core/Nat";
 import Time "mo:core/Time";
 import Iter "mo:core/Iter";
-import Array "mo:core/Array";
 import MixinStorage "blob-storage/Mixin";
 import Storage "blob-storage/Storage";
 import Migration "migration";
 
 (with migration = Migration.run)
 actor {
-  include MixinStorage();
-
-  // ===== Type Definitions =====
-
   type InvoiceItem = {
     srNo : Nat;
     particular : Text;
@@ -118,15 +113,24 @@ actor {
     isActive : Bool;
   };
 
+  type BillingCustomer = {
+    id : Nat;
+    name : Text;
+    phone : Text;
+    address : Text;
+  };
+
   type SecurityAnswers = {
     answer1 : Text;
     answer2 : Text;
     answer3 : Text;
   };
 
-  // ===== Persistent State =====
-
+  // Persistent state variables
   var logo : Text = "";
+  var bannerImage : Text = ""; // NEW VARIABLE for banner
+  var companiesJson : Text = ""; // NEW VARIABLE for companies data
+
   var adminPassword : Text = "";
   let services = Map.empty<Nat, Service>();
   let employees = Map.empty<Nat, Employee>();
@@ -135,6 +139,7 @@ actor {
   let customerOrders = Map.empty<Nat, CustomerOrder>();
   let contactMessages = Map.empty<Nat, ContactMessage>();
   let billingItems = Map.empty<Nat, BillingItem>();
+  let billingCustomers = Map.empty<Nat, BillingCustomer>();
   let customers = Map.empty<Nat, CustomerAccount>();
   var aboutStats : ?AboutStats = null;
   var securityAnswers : SecurityAnswers = {
@@ -143,19 +148,41 @@ actor {
     answer3 = "03113639008";
   };
 
-  // ===== Logo / Password =====
+  include MixinStorage();
 
-  public shared ({ caller }) func getLogo() : async Text { logo };
+  // ===== LOGO & PASSWORD =====
+
+  public shared ({ caller }) func getLogo() : async Text {
+    logo;
+  };
   public shared ({ caller }) func setLogo(v : Text) : async () {
     logo := v;
   };
 
-  public shared ({ caller }) func getAdminPassword() : async Text { adminPassword };
+  public shared ({ caller }) func getAdminPassword() : async Text {
+    adminPassword;
+  };
   public shared ({ caller }) func setAdminPassword(v : Text) : async () {
     adminPassword := v;
   };
 
-  // ===== Services CRUD =====
+  // ===== BANNER & COMPANIES =====
+
+  public shared ({ caller }) func getBannerImage() : async Text {
+    bannerImage;
+  };
+  public shared ({ caller }) func setBannerImage(v : Text) : async () {
+    bannerImage := v;
+  };
+
+  public shared ({ caller }) func getCompaniesJson() : async Text {
+    companiesJson;
+  };
+  public shared ({ caller }) func setCompaniesJson(v : Text) : async () {
+    companiesJson := v;
+  };
+
+  // ===== SERVICES CRUD =====
 
   public shared ({ caller }) func getAllServices() : async [Service] {
     services.values().toArray();
@@ -183,7 +210,7 @@ actor {
     } else { false };
   };
 
-  // ===== Employees CRUD =====
+  // ===== EMPLOYEES CRUD =====
 
   public shared ({ caller }) func getAllEmployees() : async [Employee] {
     employees.values().toArray();
@@ -211,7 +238,7 @@ actor {
     } else { false };
   };
 
-  // ===== Reviews CRUD =====
+  // ===== REVIEWS CRUD =====
 
   public shared ({ caller }) func getAllReviews() : async [Review] {
     reviews.values().toArray();
@@ -247,7 +274,7 @@ actor {
     reviews.values().toArray().filter(func(r) { r.status == "pending" });
   };
 
-  // ===== Invoices CRUD =====
+  // ===== INVOICES CRUD =====
 
   public shared ({ caller }) func getAllInvoices() : async [Invoice] {
     invoices.values().toArray();
@@ -281,7 +308,7 @@ actor {
     invoiceArray;
   };
 
-  // ===== Customer Orders CRUD =====
+  // ===== CUSTOMER ORDERS CRUD =====
 
   public shared ({ caller }) func getAllCustomerOrders() : async [CustomerOrder] {
     customerOrders.values().toArray();
@@ -320,7 +347,7 @@ actor {
     );
   };
 
-  // ===== Contact Messages CRUD =====
+  // ===== CONTACT MESSAGES CRUD =====
 
   public shared ({ caller }) func getAllContactMessages() : async [ContactMessage] {
     contactMessages.values().toArray();
@@ -352,7 +379,7 @@ actor {
     } else { false };
   };
 
-  // ===== Billing Items CRUD =====
+  // ===== BILLING ITEMS CRUD =====
 
   public shared ({ caller }) func getAllBillingItems() : async [BillingItem] {
     billingItems.values().toArray();
@@ -380,7 +407,35 @@ actor {
     } else { false };
   };
 
-  // ===== About Stats CRUD =====
+  // ===== BILLING CUSTOMERS CRUD (NEW) =====
+
+  public shared ({ caller }) func getAllBillingCustomers() : async [BillingCustomer] {
+    billingCustomers.values().toArray();
+  };
+
+  public shared ({ caller }) func getBillingCustomer(id : Nat) : async ?BillingCustomer {
+    billingCustomers.get(id);
+  };
+
+  public shared ({ caller }) func addBillingCustomer(customer : BillingCustomer) : async () {
+    billingCustomers.add(customer.id, customer);
+  };
+
+  public shared ({ caller }) func updateBillingCustomer(id : Nat, customer : BillingCustomer) : async Bool {
+    if (billingCustomers.containsKey(id)) {
+      billingCustomers.add(id, customer);
+      true;
+    } else { false };
+  };
+
+  public shared ({ caller }) func deleteBillingCustomer(id : Nat) : async Bool {
+    if (billingCustomers.containsKey(id)) {
+      billingCustomers.remove(id);
+      true;
+    } else { false };
+  };
+
+  // ===== ABOUT STATS CRUD =====
 
   public shared ({ caller }) func getAboutStats() : async ?AboutStats {
     aboutStats;
@@ -390,7 +445,7 @@ actor {
     aboutStats := ?stats;
   };
 
-  // ===== Customers CRUD =====
+  // ===== CUSTOMERS CRUD =====
 
   public shared ({ caller }) func registerCustomer(c : CustomerAccount) : async () {
     let existingCustomer = customers.toArray().find(
@@ -451,7 +506,7 @@ actor {
     };
   };
 
-  // ===== Security Answers =====
+  // ===== SECURITY ANSWERS =====
 
   public shared ({ caller }) func setSecurityAnswers(s : SecurityAnswers) : async () {
     securityAnswers := s;
@@ -461,5 +516,3 @@ actor {
     securityAnswers;
   };
 };
-
-

@@ -11,6 +11,12 @@ import type { IDL } from '@icp-sdk/core/candid';
 import type { Principal } from '@icp-sdk/core/principal';
 
 export interface AboutStats { 'clientsCount' : string, 'experience' : string }
+export interface BillingCustomer {
+  'id' : bigint,
+  'name' : string,
+  'address' : string,
+  'phone' : string,
+}
 export interface BillingItem {
   'id' : bigint,
   'purchasePrice' : bigint,
@@ -134,6 +140,7 @@ export interface _SERVICE {
     _CaffeineStorageRefillResult
   >,
   '_caffeineStorageUpdateGatewayPrincipals' : ActorMethod<[], undefined>,
+  'addBillingCustomer' : ActorMethod<[BillingCustomer], undefined>,
   'addBillingItem' : ActorMethod<[BillingItem], undefined>,
   'addContactMessage' : ActorMethod<[ContactMessage], undefined>,
   'addCustomerOrder' : ActorMethod<[CustomerOrder], undefined>,
@@ -141,6 +148,7 @@ export interface _SERVICE {
   'addInvoice' : ActorMethod<[Invoice], undefined>,
   'addReview' : ActorMethod<[Review], undefined>,
   'addService' : ActorMethod<[Service], undefined>,
+  'deleteBillingCustomer' : ActorMethod<[bigint], boolean>,
   'deleteBillingItem' : ActorMethod<[bigint], boolean>,
   'deleteContactMessage' : ActorMethod<[bigint], boolean>,
   'deleteCustomer' : ActorMethod<[bigint], boolean>,
@@ -151,6 +159,7 @@ export interface _SERVICE {
   'deleteService' : ActorMethod<[bigint], boolean>,
   'getAboutStats' : ActorMethod<[], [] | [AboutStats]>,
   'getAdminPassword' : ActorMethod<[], string>,
+  'getAllBillingCustomers' : ActorMethod<[], Array<BillingCustomer>>,
   'getAllBillingItems' : ActorMethod<[], Array<BillingItem>>,
   'getAllContactMessages' : ActorMethod<[], Array<ContactMessage>>,
   'getAllCustomerOrders' : ActorMethod<[], Array<CustomerOrder>>,
@@ -160,7 +169,10 @@ export interface _SERVICE {
   'getAllReviews' : ActorMethod<[], Array<Review>>,
   'getAllServices' : ActorMethod<[], Array<Service>>,
   'getApprovedReviews' : ActorMethod<[], Array<Review>>,
+  'getBannerImage' : ActorMethod<[], string>,
+  'getBillingCustomer' : ActorMethod<[bigint], [] | [BillingCustomer]>,
   'getBillingItem' : ActorMethod<[bigint], [] | [BillingItem]>,
+  'getCompaniesJson' : ActorMethod<[], string>,
   'getContactMessage' : ActorMethod<[bigint], [] | [ContactMessage]>,
   'getCustomerByEmail' : ActorMethod<[string], [] | [CustomerAccount]>,
   'getCustomerById' : ActorMethod<[bigint], CustomerAccount>,
@@ -178,8 +190,11 @@ export interface _SERVICE {
   'registerCustomer' : ActorMethod<[CustomerAccount], undefined>,
   'setAboutStats' : ActorMethod<[AboutStats], undefined>,
   'setAdminPassword' : ActorMethod<[string], undefined>,
+  'setBannerImage' : ActorMethod<[string], undefined>,
+  'setCompaniesJson' : ActorMethod<[string], undefined>,
   'setLogo' : ActorMethod<[string], undefined>,
   'setSecurityAnswers' : ActorMethod<[SecurityAnswers], undefined>,
+  'updateBillingCustomer' : ActorMethod<[bigint, BillingCustomer], boolean>,
   'updateBillingItem' : ActorMethod<[bigint, BillingItem], boolean>,
   'updateCustomer' : ActorMethod<[bigint, CustomerAccount], boolean>,
   'updateCustomerLastLogin' : ActorMethod<[bigint], undefined>,

@@ -24,14 +24,6 @@ export interface Invoice {
   balance: number;
   discount: number;
   terms: string;
-  paymentStatus?: "unpaid" | "partial" | "paid";
-}
-
-export interface BillingCustomer {
-  id: string;
-  name: string;
-  phone: string;
-  address: string;
 }
 
 export interface ContactMessage {
@@ -258,7 +250,6 @@ const KEYS = {
   logo: "idpc_logo",
   orders: "idpc_orders",
   billingItems: "idpc_billing_items",
-  billingCustomers: "idpc_billing_customers",
 };
 
 // Initialize storage on first load
@@ -286,9 +277,6 @@ export function initStorage() {
   }
   if (!localStorage.getItem(KEYS.billingItems)) {
     localStorage.setItem(KEYS.billingItems, JSON.stringify([]));
-  }
-  if (!localStorage.getItem(KEYS.billingCustomers)) {
-    localStorage.setItem(KEYS.billingCustomers, JSON.stringify([]));
   }
 }
 
@@ -532,41 +520,4 @@ export function updateBillingItemInStorage(updated: BillingItem) {
 
 export function deleteBillingItemFromStorage(id: string) {
   saveBillingItems(getBillingItems().filter((i) => i.id !== id));
-}
-
-// ---- Billing Customers ----
-
-export function getBillingCustomers(): BillingCustomer[] {
-  const data = localStorage.getItem("idpc_billing_customers");
-  return data ? JSON.parse(data) : [];
-}
-
-export function saveBillingCustomers(customers: BillingCustomer[]) {
-  localStorage.setItem("idpc_billing_customers", JSON.stringify(customers));
-}
-
-export function addBillingCustomer(
-  name: string,
-  phone: string,
-  address?: string,
-): BillingCustomer {
-  const customers = getBillingCustomers();
-  // Don't add duplicate (same name, case-insensitive)
-  const exists = customers.find(
-    (c) => c.name.trim().toLowerCase() === name.trim().toLowerCase(),
-  );
-  if (exists) return exists;
-  const newCustomer: BillingCustomer = {
-    id: Date.now().toString(),
-    name: name.trim(),
-    phone: phone.trim(),
-    address: (address || "").trim(),
-  };
-  customers.push(newCustomer);
-  saveBillingCustomers(customers);
-  return newCustomer;
-}
-
-export function deleteBillingCustomer(id: string) {
-  saveBillingCustomers(getBillingCustomers().filter((c) => c.id !== id));
 }

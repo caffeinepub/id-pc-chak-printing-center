@@ -14,6 +14,7 @@ import {
   type backendInterface,
 } from "@/backend";
 import {
+  type BillingCustomer as FEBillingCustomer,
   type BillingItem as FEBillingItem,
   type ContactMessage as FEContactMessage,
   type Employee as FEEmployee,
@@ -40,8 +41,10 @@ import {
   setLogo as lsSetLogo,
   updateInvoice as lsUpdateInvoice,
   updateOrder as lsUpdateOrder,
+  saveBillingCustomers,
   saveBillingItems,
   saveContactMessages,
+  saveEmployees,
   saveOrders,
   saveReviews,
   saveServices,
@@ -50,6 +53,7 @@ import {
 
 // Re-export frontend types for convenience
 export type {
+  FEBillingCustomer as BillingCustomer,
   FEBillingItem as BillingItem,
   FEContactMessage as ContactMessage,
   FEEmployee as Employee,
@@ -57,6 +61,13 @@ export type {
   FEReview as Review,
   FEService as Service,
 };
+
+// Company type (used by About page and Admin panel)
+export interface Company {
+  id: string;
+  name: string;
+  logo: string; // base64 or empty string
+}
 
 // -----------------------------------------------------------------------
 // ID encoding helpers
@@ -114,18 +125,37 @@ export async function saveLogo(
 // -----------------------------------------------------------------------
 
 export async function fetchBannerImage(
-  _actor: backendInterface | null,
+  actor: backendInterface | null,
 ): Promise<string> {
-  // Banner image is stored in localStorage only (no backend method)
+  try {
+    if (actor) {
+      const img = await actor.getBannerImage();
+      if (img) {
+        lsSetBannerImage(img);
+        return img;
+      }
+    }
+  } catch (e) {
+    console.warn(
+      "fetchBannerImage backend error, falling back to localStorage",
+      e,
+    );
+  }
   return getBannerImage();
 }
 
 export async function saveBannerImage(
-  _actor: backendInterface | null,
+  actor: backendInterface | null,
   dataUrl: string,
 ): Promise<void> {
-  // Banner image is stored in localStorage only (no backend method)
   lsSetBannerImage(dataUrl);
+  if (actor) {
+    try {
+      await actor.setBannerImage(dataUrl);
+    } catch (e) {
+      console.warn("saveBannerImage backend error", e);
+    }
+  }
 }
 
 // -----------------------------------------------------------------------
@@ -228,25 +258,88 @@ export async function backendDeleteService(
 // -----------------------------------------------------------------------
 
 export async function fetchEmployees(
-  _actor: backendInterface | null,
+  actor: backendInterface | null,
 ): Promise<FEEmployee[]> {
+  try {
+    if (actor) {
+      const emps = await actor.getAllEmployees();
+      if (emps.length > 0) {
+        const lsEmployees = getEmployees();
+        const merged = emps.map((emp) => {
+          const lsMatch = lsEmployees.find((ls) => ls.id === emp.id.toString());
+          return {
+            id: emp.id.toString(),
+            fullName: emp.fullName,
+            fatherName: emp.fatherName,
+            age: String(emp.age),
+            cnic: emp.cnic,
+            mobile: emp.mobile,
+            bloodGroup: emp.bloodGroup,
+            photo: lsMatch?.photo || emp.photo.getDirectURL() || "",
+            designation: emp.designation,
+          } as FEEmployee;
+        });
+        // Also merge LS employees not in backend
+        for (const lsEmp of lsEmployees) {
+          if (!merged.find((m) => m.id === lsEmp.id)) merged.push(lsEmp);
+        }
+        saveEmployees(merged);
+        return merged;
+      }
+    }
+  } catch (e) {
+    console.warn("fetchEmployees backend error", e);
+  }
   return getEmployees();
 }
 
 export async function backendAddEmployee(
-  _actor: backendInterface | null,
+  actor: backendInterface | null,
   emp: Omit<FEEmployee, "id">,
 ): Promise<FEEmployee> {
   const id = BigInt(Date.now());
   const newEmp: FEEmployee = { ...emp, id: id.toString() };
+  if (actor) {
+    try {
+      await actor.addEmployee({
+        id,
+        fullName: emp.fullName,
+        fatherName: emp.fatherName,
+        age: BigInt(Number(emp.age) || 0),
+        cnic: emp.cnic,
+        mobile: emp.mobile,
+        bloodGroup: emp.bloodGroup,
+        photo: emptyBlob(),
+        designation: emp.designation,
+      });
+    } catch (e) {
+      console.warn("backendAddEmployee error", e);
+    }
+  }
   return newEmp;
 }
 
 export async function backendUpdateEmployee(
-  _actor: backendInterface | null,
-  _emp: FEEmployee,
+  actor: backendInterface | null,
+  emp: FEEmployee,
 ): Promise<void> {
-  // LS only
+  if (actor) {
+    try {
+      await actor.updateEmployee(BigInt(emp.id), {
+        id: BigInt(emp.id),
+        fullName: emp.fullName,
+        fatherName: emp.fatherName,
+        age: BigInt(Number(emp.age) || 0),
+        cnic: emp.cnic,
+        mobile: emp.mobile,
+        bloodGroup: emp.bloodGroup,
+        photo: emptyBlob(),
+        designation: emp.designation,
+      });
+    } catch (e) {
+      console.warn("backendUpdateEmployee error", e);
+    }
+  }
 }
 
 export async function backendDeleteEmployee(
@@ -799,6 +892,151 @@ export async function backendDeleteBillingItem(
       await actor.deleteBillingItem(BigInt(id));
     } catch (e) {
       console.warn("backendDeleteBillingItem error", e);
+    }
+  }
+}
+
+// -----------------------------------------------------------------------
+// Companies
+// -----------------------------------------------------------------------
+
+export async function fetchCompanies(
+  actor: backendInterface | null,
+): Promise<Company[]> {
+  try {
+    if (actor) {
+      const json = await actor.getCompaniesJson();
+      if (json) {
+        const companies = JSON.parse(json) as Company[];
+        localStorage.setItem("idpc_companies", json);
+        return companies;
+      }
+    }
+  } catch (e) {
+    console.warn("fetchCompanies backend error", e);
+  }
+  const data = localStorage.getItem("idpc_companies");
+  return data ? JSON.parse(data) : [];
+}
+
+export async function saveCompanies(
+  actor: backendInterface | null,
+  companies: Company[],
+): Promise<void> {
+  const json = JSON.stringify(companies);
+  localStorage.setItem("idpc_companies", json);
+  if (actor) {
+    try {
+      await actor.setCompaniesJson(json);
+    } catch (e) {
+      console.warn("saveCompanies backend error", e);
+    }
+  }
+}
+
+// -----------------------------------------------------------------------
+// Billing Customers (with address)
+// -----------------------------------------------------------------------
+
+export async function fetchBillingCustomers(
+  actor: backendInterface | null,
+): Promise<FEBillingCustomer[]> {
+  try {
+    if (actor) {
+      const customers = await actor.getAllBillingCustomers();
+      if (customers.length > 0) {
+        const decoded = customers.map((c) => ({
+          id: c.id.toString(),
+          name: c.name,
+          phone: c.phone,
+          address: c.address,
+        }));
+        localStorage.setItem("idpc_billing_customers", JSON.stringify(decoded));
+        return decoded;
+      }
+    }
+  } catch (e) {
+    console.warn("fetchBillingCustomers backend error", e);
+  }
+  const data = localStorage.getItem("idpc_billing_customers");
+  if (!data) return [];
+  // Ensure address field exists for legacy data
+  const parsed: FEBillingCustomer[] = JSON.parse(data);
+  return parsed.map((c) => ({ ...c, address: c.address ?? "" }));
+}
+
+export async function backendAddBillingCustomer(
+  actor: backendInterface | null,
+  customer: Omit<FEBillingCustomer, "id">,
+): Promise<FEBillingCustomer> {
+  const id = BigInt(Date.now());
+  const newCustomer: FEBillingCustomer = { id: id.toString(), ...customer };
+  const existing: FEBillingCustomer[] = JSON.parse(
+    localStorage.getItem("idpc_billing_customers") || "[]",
+  );
+  const dedup = existing.find(
+    (c) => c.name.toLowerCase() === customer.name.toLowerCase(),
+  );
+  if (!dedup) {
+    existing.push(newCustomer);
+    localStorage.setItem("idpc_billing_customers", JSON.stringify(existing));
+  }
+  if (actor) {
+    try {
+      await actor.addBillingCustomer({
+        id,
+        name: customer.name,
+        phone: customer.phone,
+        address: customer.address,
+      });
+    } catch (e) {
+      console.warn("backendAddBillingCustomer error", e);
+    }
+  }
+  return dedup || newCustomer;
+}
+
+export async function backendDeleteBillingCustomer(
+  actor: backendInterface | null,
+  id: string,
+): Promise<void> {
+  const existing: FEBillingCustomer[] = JSON.parse(
+    localStorage.getItem("idpc_billing_customers") || "[]",
+  );
+  localStorage.setItem(
+    "idpc_billing_customers",
+    JSON.stringify(existing.filter((c) => c.id !== id)),
+  );
+  if (actor) {
+    try {
+      await actor.deleteBillingCustomer(BigInt(id));
+    } catch (e) {
+      console.warn("backendDeleteBillingCustomer error", e);
+    }
+  }
+}
+
+export async function backendUpdateBillingCustomer(
+  actor: backendInterface | null,
+  customer: FEBillingCustomer,
+): Promise<void> {
+  const existing: FEBillingCustomer[] = JSON.parse(
+    localStorage.getItem("idpc_billing_customers") || "[]",
+  );
+  localStorage.setItem(
+    "idpc_billing_customers",
+    JSON.stringify(existing.map((c) => (c.id === customer.id ? customer : c))),
+  );
+  if (actor) {
+    try {
+      await actor.updateBillingCustomer(BigInt(customer.id), {
+        id: BigInt(customer.id),
+        name: customer.name,
+        phone: customer.phone,
+        address: customer.address,
+      });
+    } catch (e) {
+      console.warn("backendUpdateBillingCustomer error", e);
     }
   }
 }

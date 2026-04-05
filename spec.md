@@ -2,52 +2,72 @@
 
 ## Current State
 
-The app has:
-- Admin login with OTP (2-step: credentials → OTP shown on screen)
-- Password reset via OTP (3 steps: send OTP → verify → new password)
-- No customer login/account system
-- BillCheckPage: public invoice lookup by userId + invoice number (no login required)
-- PurchasePage: anyone can place orders (no login gate)
-- Admin dashboard with full management: services, employees, invoices, orders, reviews, billing items, reports, contact messages
-- Backend: ICP Motoko canister with CRUD for all entities. No authentication on any endpoint.
-- No customer data model (no customer profiles, passwords, sessions)
+The website is live and functional. However 4 issues have been identified:
+
+1. **Real-time sync broken** for bannerImage, employees, and companies — these 3 data types are stored in localStorage only and never synced to the ICP backend. This means changes made on one device (admin's phone) don't appear on other devices or the live site.
+   - `fetchBannerImage()` does NOT call backend at all
+   - `fetchEmployees()` does NOT call backend at all  
+   - `getCompanies()` in AboutPage is loaded only once in `useEffect([])` — no polling
+
+2. **Billing customers** have no `address` field — only `name` and `phone`.
+
+3. **Invoice search** only searches by customer name. No phone number or invoice number search.
+
+4. **Sales report** has no date range filter — only Daily (today) / Weekly (last 7 days) / Monthly (current month). Cannot view past dates.
 
 ## Requested Changes (Diff)
 
 ### Add
-- **Customer data model**: `CustomerAccount` type in backend with fields: id (Nat), name (Text), phone (Text), email (Text), passwordHash (Text), googleId (Option Text), isGoogleUser (Bool), createdAt (Int), lastLoginAt (Int)
-- **Backend functions**: `registerCustomer`, `loginCustomer` (returns token/id), `getCustomerByEmail`, `getCustomerById`, `getAllCustomers`, `updateCustomer`, `deleteCustomer`, `getCustomerOrders` (by customer id), `getCustomerInvoices` (by customer phone)
-- **Security questions storage on backend**: `getSecurityAnswers`, `setSecurityAnswers` — store the 3 fixed answers (DOB, CNIC, mobile) so password reset works by matching them
-- **Customer login page** (`/customer/login`): email + password form with OTP verification step. Also shows "Continue with Google" button (simulated for FYP demo — button present but shows info message that Google OAuth requires production setup). OTP shown on screen in demo box.
-- **Customer register page** (`/customer/register`): name, email, phone, password fields
-- **Customer dashboard page** (`/customer/dashboard`): shows logged-in customer's invoices, orders, order status (Completed/Pending), total work summary
-- **Password reset with security questions**: Replace OTP-based reset with a 3-question form. Questions are hardcoded labels but answers are stored/matched in backend. All 3 must match to allow reset.
-- **Admin panel "Customers" tab**: shows all registered customers, their login history (lastLoginAt), order count, invoice count
-- **Login-required gate on PurchasePage**: if customer is not logged in, show login prompt before allowing order placement
-- **BillCheckPage**: keep working without login (just invoice number lookup). No change needed.
+- Backend: `BillingCustomer` type with `address` field, `getAllBillingCustomers`, `addBillingCustomer`, `deleteBillingCustomer`, `updateBillingCustomer` methods
+- Backend: `bannerImage` stored as a text variable with `getBannerImage` / `setBannerImage` methods
+- Backend: companies stored as JSON text with `getCompanies` / `setCompanies` methods  
+- Frontend: `useCompanies` React Query hook that polls backend every 5 seconds
+- Frontend: Invoice search — add phone number search (inv.phone.includes) and invoice number search (inv.id.includes)
+- Frontend: Sales report — add "Custom Date Range" option with start date + end date pickers
+- Frontend: Billing customer add/edit form — add `address` field
+- Frontend: Billing customers table — show address column
 
 ### Modify
-- **ResetPasswordPage**: Replace 3-step OTP flow with 3-step security questions flow:
-  1. Enter admin username to identify
-  2. Answer 3 security questions (all 3 must match stored answers)
-  3. Enter new password
-- **AdminLoginPage**: Keep OTP flow as-is. No change.
-- **App.tsx**: Add new routes: `/customer/login`, `/customer/register`, `/customer/dashboard`
-- **Navbar**: Add "Customer Login" button/link in the nav
-- **backendData.ts**: Add customer CRUD functions
-- **AdminDashboardPage**: Add "Customers" tab showing registered customers and their activity
-- **PurchasePage**: Check if customer is logged in (localStorage `customerSession`); if not, show modal/prompt to login before submitting order. Link order to customer account on submit.
+- `fetchBannerImage` in backendData.ts — call `actor.getBannerImage()` backend method
+- `saveBannerImage` in backendData.ts — call `actor.setBannerImage()` backend method
+- `fetchEmployees` in backendData.ts — call `actor.getAllEmployees()` backend method
+- `backendAddEmployee` — call `actor.addEmployee()` backend method
+- `backendUpdateEmployee` — call `actor.updateEmployee()` backend method
+- AboutPage.tsx — replace one-time `useEffect` companies load with `useCompanies()` hook
+- AdminDashboardPage.tsx — update billing customers CRUD to include address field; update invoice search filter; update reports date filter
+- storage.ts — add `address` field to `BillingCustomer` interface
 
 ### Remove
-- OTP logic from `ResetPasswordPage` (replace entirely with security questions)
+- Nothing removed
 
 ## Implementation Plan
 
-1. **Backend (Motoko)**: Add `CustomerAccount` type, security answers storage, and all customer-related canister functions.
-2. **backendData.ts**: Add `fetchCustomers`, `registerCustomer`, `loginCustomer`, `fetchCustomerOrders`, `fetchCustomerInvoices`, `getSecurityAnswers`, `setSecurityAnswers` functions.
-3. **ResetPasswordPage**: Rewrite to use 3 security questions instead of OTP.
-4. **New pages**: `CustomerLoginPage`, `CustomerRegisterPage`, `CustomerDashboardPage`.
-5. **App.tsx**: Register new customer routes.
-6. **Navbar**: Add customer login/account link.
-7. **PurchasePage**: Add login gate before order submission.
-8. **AdminDashboardPage**: Add Customers tab.
+1. Update `src/backend/main.mo`:
+   - Add `bannerImage` text variable + `getBannerImage`/`setBannerImage` functions
+   - Add `companiesJson` text variable + `getCompanies`/`setCompanies` functions
+   - Add `BillingCustomer` type with id, name, phone, address fields
+   - Add `billingCustomers` Map with full CRUD methods
+   - Employee backend already has full CRUD — just need frontend to use it
+
+2. Update `src/frontend/src/lib/backendData.ts`:
+   - Fix `fetchBannerImage` / `saveBannerImage` to use backend
+   - Fix `fetchEmployees` / `backendAddEmployee` / `backendUpdateEmployee` to use backend
+   - Add `fetchCompanies` / `saveCompanies` backend functions
+   - Add `fetchBillingCustomers` / `backendAddBillingCustomer` / `backendDeleteBillingCustomer` / `backendUpdateBillingCustomer`
+
+3. Update `src/frontend/src/lib/storage.ts`:
+   - Add `address` field to `BillingCustomer` interface
+   - Add `getBillingCustomers` / `saveBillingCustomers` / `addBillingCustomer` helper functions with address support
+
+4. Update `src/frontend/src/hooks/useQueries.ts`:
+   - Add `useCompanies` hook with 5s polling
+   - Add `useBillingCustomers` hook with 5s polling
+
+5. Update `src/frontend/src/pages/AboutPage.tsx`:
+   - Replace one-time companies `useEffect` with `useCompanies()` hook
+
+6. Update `src/frontend/src/pages/AdminDashboardPage.tsx`:
+   - Add address field to billing customer add/edit form and table
+   - Update invoice search to include phone number and invoice number
+   - Add custom date range filter to reports tab
+   - Wire billing customers to use backend via `useBillingCustomers` hook

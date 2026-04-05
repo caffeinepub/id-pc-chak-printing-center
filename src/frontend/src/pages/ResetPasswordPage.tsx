@@ -18,11 +18,11 @@ import { useEffect, useState } from "react";
 
 type ResetStep = 1 | 2 | 3;
 
-// Default security answers (stored in backend; these are the defaults for FYP demo)
+// Default security answers (stored in backend)
 const DEFAULT_SECURITY_ANSWERS = {
-  answer1: "24-07-2004", // Girlfriend's DOB
-  answer2: "4330384851864", // Mother's CNIC
-  answer3: "03113639008", // First Mobile Number
+  answer1: "24-07-2004",
+  answer2: "4330384851864",
+  answer3: "03113639008",
 };
 
 export default function ResetPasswordPage() {
@@ -248,7 +248,7 @@ export default function ResetPasswordPage() {
                         <Input
                           value={ans1}
                           onChange={(e) => setAns1(e.target.value)}
-                          placeholder="e.g. 24-07-2004"
+                          placeholder="Enter your answer"
                           required
                           className="mt-1"
                           data-ocid="reset_password.answer1.input"
@@ -263,7 +263,7 @@ export default function ResetPasswordPage() {
                         <Input
                           value={ans2}
                           onChange={(e) => setAns2(e.target.value)}
-                          placeholder="e.g. 4330384851864"
+                          placeholder="Enter your answer"
                           required
                           className="mt-1"
                           data-ocid="reset_password.answer2.input"
@@ -278,7 +278,7 @@ export default function ResetPasswordPage() {
                         <Input
                           value={ans3}
                           onChange={(e) => setAns3(e.target.value)}
-                          placeholder="e.g. 03113639008"
+                          placeholder="Enter your answer"
                           required
                           className="mt-1"
                           data-ocid="reset_password.answer3.input"

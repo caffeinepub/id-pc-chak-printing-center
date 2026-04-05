@@ -62,6 +62,12 @@ export interface Invoice {
     items: Array<InvoiceItem>;
     advance: bigint;
 }
+export interface BillingCustomer {
+    id: bigint;
+    name: string;
+    address: string;
+    phone: string;
+}
 export interface BillingItem {
     id: bigint;
     purchasePrice: bigint;
@@ -114,6 +120,7 @@ export interface Review {
     rating: bigint;
 }
 export interface backendInterface {
+    addBillingCustomer(customer: BillingCustomer): Promise<void>;
     addBillingItem(item: BillingItem): Promise<void>;
     addContactMessage(m: ContactMessage): Promise<void>;
     addCustomerOrder(o: CustomerOrder): Promise<void>;
@@ -121,6 +128,7 @@ export interface backendInterface {
     addInvoice(inv: Invoice): Promise<void>;
     addReview(r: Review): Promise<void>;
     addService(s: Service): Promise<void>;
+    deleteBillingCustomer(id: bigint): Promise<boolean>;
     deleteBillingItem(id: bigint): Promise<boolean>;
     deleteContactMessage(id: bigint): Promise<boolean>;
     deleteCustomer(id: bigint): Promise<boolean>;
@@ -131,6 +139,7 @@ export interface backendInterface {
     deleteService(id: bigint): Promise<boolean>;
     getAboutStats(): Promise<AboutStats | null>;
     getAdminPassword(): Promise<string>;
+    getAllBillingCustomers(): Promise<Array<BillingCustomer>>;
     getAllBillingItems(): Promise<Array<BillingItem>>;
     getAllContactMessages(): Promise<Array<ContactMessage>>;
     getAllCustomerOrders(): Promise<Array<CustomerOrder>>;
@@ -140,7 +149,10 @@ export interface backendInterface {
     getAllReviews(): Promise<Array<Review>>;
     getAllServices(): Promise<Array<Service>>;
     getApprovedReviews(): Promise<Array<Review>>;
+    getBannerImage(): Promise<string>;
+    getBillingCustomer(id: bigint): Promise<BillingCustomer | null>;
     getBillingItem(id: bigint): Promise<BillingItem | null>;
+    getCompaniesJson(): Promise<string>;
     getContactMessage(id: bigint): Promise<ContactMessage | null>;
     getCustomerByEmail(email: string): Promise<CustomerAccount | null>;
     getCustomerById(id: bigint): Promise<CustomerAccount>;
@@ -158,8 +170,11 @@ export interface backendInterface {
     registerCustomer(c: CustomerAccount): Promise<void>;
     setAboutStats(stats: AboutStats): Promise<void>;
     setAdminPassword(v: string): Promise<void>;
+    setBannerImage(v: string): Promise<void>;
+    setCompaniesJson(v: string): Promise<void>;
     setLogo(v: string): Promise<void>;
     setSecurityAnswers(s: SecurityAnswers): Promise<void>;
+    updateBillingCustomer(id: bigint, customer: BillingCustomer): Promise<boolean>;
     updateBillingItem(id: bigint, item: BillingItem): Promise<boolean>;
     updateCustomer(id: bigint, c: CustomerAccount): Promise<boolean>;
     updateCustomerLastLogin(id: bigint): Promise<void>;

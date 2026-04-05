@@ -8,9 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useActor } from "@/hooks/useActor";
 import {
   useApprovedReviews,
-  useBillingCustomers,
   useBillingItems,
-  useCompanies,
   useContactMessages,
   useInvalidate,
   useInvoices,
@@ -18,13 +16,11 @@ import {
   usePendingReviews,
 } from "@/hooks/useQueries";
 import {
-  backendAddBillingCustomer,
   backendAddBillingItem,
   backendAddEmployee,
   backendAddInvoice,
   backendAddReview,
   backendAddService,
-  backendDeleteBillingCustomer,
   backendDeleteBillingItem,
   backendDeleteContactMessage,
   backendDeleteEmployee,
@@ -42,11 +38,9 @@ import {
   fetchCustomers,
   saveAboutStats,
   saveBannerImage,
-  saveCompanies,
   saveLogo,
 } from "@/lib/backendData";
 import {
-  type BillingCustomer,
   type BillingItem,
   type Employee,
   type Invoice,
@@ -82,7 +76,6 @@ import {
   Plus,
   PlusCircle,
   Printer,
-  Search,
   Send,
   Settings,
   ShoppingBag,
@@ -140,8 +133,7 @@ type Tab =
   | "logo"
   | "about"
   | "customers"
-  | "companies"
-  | "billing-customers";
+  | "companies";
 type View = "list" | "create" | "view-invoice";
 
 interface ItemRow extends Omit<InvoiceItem, "srNo" | "total"> {
@@ -152,7 +144,7 @@ interface ItemRow extends Omit<InvoiceItem, "srNo" | "total"> {
 const BLOOD_GROUPS = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
 const ORDER_STATUSES = ["pending", "confirmed", "completed"];
 const REPORT_PERIODS = ["daily", "weekly", "monthly"] as const;
-type ReportPeriod = (typeof REPORT_PERIODS)[number] | "custom";
+type ReportPeriod = (typeof REPORT_PERIODS)[number];
 
 function formatOrderNumber(id: string): string {
   const num = Number.parseInt(id, 10) || 0;
@@ -177,21 +169,6 @@ export default function AdminDashboardPage() {
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
   const [editingInvoice, setEditingInvoice] = useState<Invoice | null>(null);
 
-  // Invoice search & filter
-  const [invoiceSearch, setInvoiceSearch] = useState("");
-  const [invoicePaymentFilter, setInvoicePaymentFilter] = useState<
-    "all" | "unpaid" | "partial" | "paid"
-  >("all");
-
-  // Billing customers (via React Query - real-time sync)
-  const { data: billingCustomers = [] } = useBillingCustomers();
-  const [customerComboOpen, setCustomerComboOpen] = useState(false);
-  const [newBillingCustomer, setNewBillingCustomer] = useState({
-    name: "",
-    phone: "",
-    address: "",
-  });
-
   // Invoice form
   const [form, setForm] = useState({
     customerName: "",
@@ -202,7 +179,6 @@ export default function AdminDashboardPage() {
     terms: DEFAULT_TERMS,
     advance: 0,
     discountPct: 0,
-    paymentStatus: "unpaid" as "unpaid" | "partial" | "paid",
   });
   const [items, setItems] = useState<ItemRow[]>(DEFAULT_ITEMS());
   const [itemSearches, setItemSearches] = useState<Record<string, string>>({});
@@ -267,15 +243,15 @@ export default function AdminDashboardPage() {
 
   // Reports
   const [reportPeriod, setReportPeriod] = useState<ReportPeriod>("monthly");
-  const [reportStartDate, setReportStartDate] = useState("");
-  const [reportEndDate, setReportEndDate] = useState("");
   const [customers, setCustomers] = useState<CustomerAccount[]>([]);
   const [customersLoading, setCustomersLoading] = useState(false);
   const [selectedCustomer, setSelectedCustomer] =
     useState<CustomerAccount | null>(null);
 
-  // Companies state (via React Query - real-time sync)
-  const { data: companies = [] } = useCompanies();
+  // Companies state
+  const [companies, setCompanies] = useState<
+    Array<{ id: string; name: string; logo: string }>
+  >([]);
   const [companyForm, setCompanyForm] = useState({ name: "", logo: "" });
   const companyLogoRef = useRef<HTMLInputElement>(null);
 
@@ -295,6 +271,8 @@ export default function AdminDashboardPage() {
     setLogoPreview(getLogo());
     setAboutYears(localStorage.getItem("idpc_years_experience") || "10+");
     setAboutClients(localStorage.getItem("idpc_num_clients") || "1000+");
+    const savedCompanies = localStorage.getItem("idpc_companies");
+    if (savedCompanies) setCompanies(JSON.parse(savedCompanies));
   }, [navigate]);
 
   // Load customers when customers tab becomes active
@@ -377,7 +355,6 @@ export default function AdminDashboardPage() {
       terms: DEFAULT_TERMS,
       advance: 0,
       discountPct: 0,
-      paymentStatus: "unpaid" as const,
     });
     setItems(DEFAULT_ITEMS());
     setItemSearches({});
@@ -401,8 +378,6 @@ export default function AdminDashboardPage() {
         balance,
         discount: discountAmount,
         terms: form.terms,
-        paymentStatus:
-          form.paymentStatus || editingInvoice.paymentStatus || "unpaid",
       };
       await backendUpdateInvoice(actor, updated);
       invalidate(["invoices"]);
@@ -423,18 +398,8 @@ export default function AdminDashboardPage() {
         balance,
         discount: discountAmount,
         terms: form.terms,
-        paymentStatus: form.paymentStatus || "unpaid",
       };
       await backendAddInvoice(actor, invoice);
-      // Auto-save customer to billing customers list
-      if (invoice.customerName.trim()) {
-        await backendAddBillingCustomer(actor, {
-          name: invoice.customerName,
-          phone: invoice.phone,
-          address: "",
-        });
-        invalidate(["billingCustomers"]);
-      }
       invalidate(["invoices"]);
       setSelectedInvoice(invoice);
       setView("view-invoice");
@@ -452,7 +417,6 @@ export default function AdminDashboardPage() {
       terms: inv.terms,
       advance: inv.advance,
       discountPct: 0,
-      paymentStatus: inv.paymentStatus || "unpaid",
     });
     setItems(
       inv.items.map((item) => ({
@@ -742,19 +706,6 @@ export default function AdminDashboardPage() {
 
   function getReportInvoices() {
     const now = new Date();
-    if (reportPeriod === "custom") {
-      if (!reportStartDate && !reportEndDate) return invoices;
-      return invoices.filter((inv) => {
-        const d = new Date(inv.date);
-        const start = reportStartDate ? new Date(reportStartDate) : null;
-        const end = reportEndDate ? new Date(reportEndDate) : null;
-        if (start) start.setHours(0, 0, 0, 0);
-        if (end) end.setHours(23, 59, 59, 999);
-        if (start && d < start) return false;
-        if (end && d > end) return false;
-        return true;
-      });
-    }
     return invoices.filter((inv) => {
       const d = new Date(inv.date);
       if (reportPeriod === "daily") {
@@ -795,19 +746,6 @@ export default function AdminDashboardPage() {
       totalProfit: totalSales - totalCost,
     };
   }
-
-  const filteredInvoices = invoices.filter((inv) => {
-    const search = invoiceSearch.toLowerCase();
-    const matchesSearch =
-      !invoiceSearch ||
-      inv.customerName.toLowerCase().includes(search) ||
-      (inv.phone || "").toLowerCase().includes(search) ||
-      inv.id.toLowerCase().includes(search);
-    const matchesPayment =
-      invoicePaymentFilter === "all" ||
-      (inv.paymentStatus || "unpaid") === invoicePaymentFilter;
-    return matchesSearch && matchesPayment;
-  });
 
   const TABS: {
     key: Tab;
@@ -876,11 +814,6 @@ export default function AdminDashboardPage() {
       label: "Companies",
       icon: <Building2 className="w-4 h-4" />,
     },
-    {
-      key: "billing-customers" as Tab,
-      label: "Billing Customers",
-      icon: <Users className="w-4 h-4" />,
-    },
   ];
 
   return (
@@ -948,13 +881,13 @@ export default function AdminDashboardPage() {
         {/* ===== INVOICES TAB ===== */}
         {view === "list" && tab === "invoices" && (
           <div className="animate-fade-in">
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center justify-between mb-6">
               <div>
                 <h1 className="font-heading font-bold text-2xl text-brand-blue">
                   Invoices
                 </h1>
                 <p className="text-muted-foreground text-sm">
-                  {filteredInvoices.length} of {invoices.length} invoices
+                  {invoices.length} invoices total
                 </p>
               </div>
               <Button
@@ -968,63 +901,14 @@ export default function AdminDashboardPage() {
                 <PlusCircle className="w-4 h-4 mr-2" /> Create New Invoice
               </Button>
             </div>
-            {/* Search and Filter row */}
-            <div className="flex flex-wrap gap-3 items-center mb-4">
-              <div className="relative flex-1 min-w-[200px]">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <input
-                  type="text"
-                  placeholder="Search by name, phone or invoice number..."
-                  value={invoiceSearch}
-                  onChange={(e) => setInvoiceSearch(e.target.value)}
-                  className="w-full pl-9 pr-4 py-2 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue/30"
-                  data-ocid="admin.invoices.search_input"
-                />
-              </div>
-              <div className="flex gap-2 flex-wrap">
-                {(["all", "unpaid", "partial", "paid"] as const).map(
-                  (status) => (
-                    <button
-                      key={status}
-                      type="button"
-                      onClick={() => setInvoicePaymentFilter(status)}
-                      className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${
-                        invoicePaymentFilter === status
-                          ? status === "all"
-                            ? "bg-brand-blue text-white"
-                            : status === "paid"
-                              ? "bg-green-600 text-white"
-                              : status === "partial"
-                                ? "bg-yellow-500 text-white"
-                                : "bg-red-500 text-white"
-                          : "bg-muted text-muted-foreground hover:bg-muted/70"
-                      }`}
-                      data-ocid={`admin.invoices.filter.${status}`}
-                    >
-                      {status === "all"
-                        ? "All"
-                        : status === "paid"
-                          ? "Paid"
-                          : status === "partial"
-                            ? "Partial"
-                            : "Unpaid"}
-                    </button>
-                  ),
-                )}
-              </div>
-            </div>
-            {filteredInvoices.length === 0 ? (
+            {invoices.length === 0 ? (
               <Card
                 className="border-dashed border-2"
                 data-ocid="admin.invoices.empty_state"
               >
                 <CardContent className="p-12 text-center">
                   <FileText className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
-                  <p className="text-muted-foreground">
-                    {invoiceSearch || invoicePaymentFilter !== "all"
-                      ? "No invoices match your filters."
-                      : "No invoices yet."}
-                  </p>
+                  <p className="text-muted-foreground">No invoices yet.</p>
                 </CardContent>
               </Card>
             ) : (
@@ -1038,12 +922,11 @@ export default function AdminDashboardPage() {
                         <th className="text-left p-4">User ID</th>
                         <th className="text-left p-4">Date</th>
                         <th className="text-right p-4">Amount</th>
-                        <th className="text-center p-4">Payment</th>
                         <th className="text-center p-4">Actions</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {filteredInvoices.map((inv, i) => (
+                      {invoices.map((inv, i) => (
                         <tr
                           key={inv.id}
                           className="border-b border-border hover:bg-muted/40 transition-colors"
@@ -1061,24 +944,6 @@ export default function AdminDashboardPage() {
                           </td>
                           <td className="p-4 text-right font-bold text-brand-gold">
                             Rs {inv.grandTotal.toFixed(0)}
-                          </td>
-                          <td className="p-4 text-center">
-                            <span
-                              className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${
-                                (inv.paymentStatus || "unpaid") === "paid"
-                                  ? "bg-green-100 text-green-700"
-                                  : (inv.paymentStatus || "unpaid") ===
-                                      "partial"
-                                    ? "bg-yellow-100 text-yellow-700"
-                                    : "bg-red-100 text-red-700"
-                              }`}
-                            >
-                              {(inv.paymentStatus || "unpaid") === "paid"
-                                ? "Paid"
-                                : (inv.paymentStatus || "unpaid") === "partial"
-                                  ? "Partial"
-                                  : "Unpaid"}
-                            </span>
                           </td>
                           <td className="p-4">
                             <div className="flex items-center justify-center gap-1 flex-wrap">
@@ -2336,7 +2201,7 @@ export default function AdminDashboardPage() {
                 View sales, profit, and performance data
               </p>
             </div>
-            <div className="flex flex-wrap gap-3 mb-3">
+            <div className="flex gap-3 mb-6">
               {REPORT_PERIODS.map((p) => (
                 <button
                   key={p}
@@ -2348,43 +2213,7 @@ export default function AdminDashboardPage() {
                   {p}
                 </button>
               ))}
-              <button
-                type="button"
-                onClick={() => setReportPeriod("custom")}
-                className={`px-5 py-2 rounded-full font-semibold text-sm transition-colors ${reportPeriod === "custom" ? "bg-brand-blue text-white" : "bg-muted text-foreground hover:bg-muted/70"}`}
-                data-ocid="admin.reports.tab"
-              >
-                Custom Date Range
-              </button>
             </div>
-            {reportPeriod === "custom" && (
-              <div className="flex flex-wrap gap-4 mb-6 p-4 bg-muted/40 rounded-xl border border-border">
-                <div>
-                  <label className="text-sm font-semibold text-brand-blue block mb-1">
-                    Start Date
-                    <input
-                      type="date"
-                      value={reportStartDate}
-                      onChange={(e) => setReportStartDate(e.target.value)}
-                      className="block mt-1 border border-border rounded-lg px-3 py-2 text-sm font-normal focus:outline-none focus:ring-2 focus:ring-brand-blue/30"
-                      data-ocid="admin.reports.input"
-                    />
-                  </label>
-                </div>
-                <div>
-                  <label className="text-sm font-semibold text-brand-blue block mb-1">
-                    End Date
-                    <input
-                      type="date"
-                      value={reportEndDate}
-                      onChange={(e) => setReportEndDate(e.target.value)}
-                      className="block mt-1 border border-border rounded-lg px-3 py-2 text-sm font-normal focus:outline-none focus:ring-2 focus:ring-brand-blue/30"
-                      data-ocid="admin.reports.input"
-                    />
-                  </label>
-                </div>
-              </div>
-            )}
             {(() => {
               const { filtered, totalSales, totalCost, totalProfit } =
                 calcReportData();
@@ -2455,9 +2284,9 @@ export default function AdminDashboardPage() {
                       <CardHeader>
                         <CardTitle className="text-brand-blue text-base">
                           Invoice Details —{" "}
-                          {reportPeriod === "custom"
-                            ? `Custom Range${reportStartDate ? ` (${reportStartDate}` : ""}${reportStartDate && reportEndDate ? " → " : ""}${reportEndDate ? `${reportEndDate})` : reportStartDate ? ")" : ""}`
-                            : `${reportPeriod.charAt(0).toUpperCase()}${reportPeriod.slice(1)} Report`}
+                          {reportPeriod.charAt(0).toUpperCase() +
+                            reportPeriod.slice(1)}{" "}
+                          Report
                         </CardTitle>
                       </CardHeader>
                       <div className="overflow-x-auto">
@@ -2860,217 +2689,6 @@ export default function AdminDashboardPage() {
           </div>
         )}
 
-        {/* ===== BILLING CUSTOMERS TAB ===== */}
-        {view === "list" && tab === "billing-customers" && (
-          <div className="animate-fade-in">
-            <div className="flex items-center justify-between mb-6">
-              <div>
-                <h1 className="font-heading font-bold text-2xl text-brand-blue">
-                  Billing Customers
-                </h1>
-                <p className="text-muted-foreground text-sm">
-                  {billingCustomers.length} saved customers
-                </p>
-              </div>
-            </div>
-            {/* Add customer form */}
-            <Card className="border-2 border-border mb-6">
-              <CardContent className="p-6">
-                <h2 className="font-semibold text-lg mb-4 text-brand-blue">
-                  Add Customer Manually
-                </h2>
-                <div className="flex flex-wrap gap-3 items-end">
-                  <div className="flex-1 min-w-[180px]">
-                    <label
-                      htmlFor="bc-name"
-                      className="text-sm font-semibold block mb-1"
-                    >
-                      Customer Name
-                    </label>
-                    <input
-                      id="bc-name"
-                      type="text"
-                      value={newBillingCustomer.name}
-                      onChange={(e) =>
-                        setNewBillingCustomer((prev) => ({
-                          ...prev,
-                          name: e.target.value,
-                        }))
-                      }
-                      placeholder="Enter customer name"
-                      className="w-full border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue/30"
-                      data-ocid="admin.billing_customers.input"
-                    />
-                  </div>
-                  <div className="flex-1 min-w-[180px]">
-                    <label
-                      htmlFor="bc-phone"
-                      className="text-sm font-semibold block mb-1"
-                    >
-                      Phone Number
-                    </label>
-                    <input
-                      id="bc-phone"
-                      type="text"
-                      value={newBillingCustomer.phone}
-                      onChange={(e) =>
-                        setNewBillingCustomer((prev) => ({
-                          ...prev,
-                          phone: e.target.value,
-                        }))
-                      }
-                      placeholder="Enter phone number"
-                      className="w-full border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue/30"
-                      data-ocid="admin.billing_customers.input"
-                    />
-                  </div>
-                  <div className="flex-1 min-w-[200px]">
-                    <label
-                      htmlFor="bc-address"
-                      className="text-sm font-semibold block mb-1"
-                    >
-                      Address (optional)
-                    </label>
-                    <input
-                      id="bc-address"
-                      type="text"
-                      value={newBillingCustomer.address}
-                      onChange={(e) =>
-                        setNewBillingCustomer((prev) => ({
-                          ...prev,
-                          address: e.target.value,
-                        }))
-                      }
-                      placeholder="Enter customer address"
-                      className="w-full border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue/30"
-                      data-ocid="admin.billing_customers.input"
-                    />
-                  </div>
-                  <Button
-                    type="button"
-                    onClick={async () => {
-                      if (newBillingCustomer.name.trim()) {
-                        await backendAddBillingCustomer(actor, {
-                          name: newBillingCustomer.name,
-                          phone: newBillingCustomer.phone,
-                          address: newBillingCustomer.address,
-                        });
-                        invalidate(["billingCustomers"]);
-                        setNewBillingCustomer({
-                          name: "",
-                          phone: "",
-                          address: "",
-                        });
-                      }
-                    }}
-                    className="bg-brand-blue text-white hover:bg-brand-blue-dark"
-                    data-ocid="admin.billing_customers.primary_button"
-                  >
-                    <PlusCircle className="w-4 h-4 mr-2" /> Add Customer
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-            {/* Customers list */}
-            {billingCustomers.length === 0 ? (
-              <Card
-                className="border-dashed border-2"
-                data-ocid="admin.billing_customers.empty_state"
-              >
-                <CardContent className="p-12 text-center">
-                  <Users className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
-                  <p className="text-muted-foreground">
-                    No billing customers yet. Add one above or create an invoice
-                    — customers are auto-saved.
-                  </p>
-                </CardContent>
-              </Card>
-            ) : (
-              <Card className="border-2 border-border shadow-card">
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead>
-                      <tr className="bg-brand-blue text-white">
-                        <th className="text-left p-4">#</th>
-                        <th className="text-left p-4">Customer Name</th>
-                        <th className="text-left p-4">Phone</th>
-                        <th className="text-left p-4">Address</th>
-                        <th className="text-left p-4">Invoices</th>
-                        <th className="text-center p-4">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {billingCustomers.map((cust, i) => {
-                        const custInvoices = invoices.filter(
-                          (inv) =>
-                            inv.customerName.toLowerCase() ===
-                            cust.name.toLowerCase(),
-                        );
-                        return (
-                          <tr
-                            key={cust.id}
-                            className="border-b border-border hover:bg-muted/40 transition-colors"
-                            data-ocid={`admin.billing_customers.row.${i + 1}`}
-                          >
-                            <td className="p-4 text-muted-foreground text-sm">
-                              {i + 1}
-                            </td>
-                            <td className="p-4 font-semibold">{cust.name}</td>
-                            <td className="p-4 text-muted-foreground">
-                              {cust.phone || "—"}
-                            </td>
-                            <td className="p-4 text-muted-foreground text-sm max-w-[180px]">
-                              {(cust as BillingCustomer).address || "—"}
-                            </td>
-                            <td className="p-4">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setInvoiceSearch(cust.name);
-                                  setInvoicePaymentFilter("all");
-                                  setTab("invoices");
-                                }}
-                                className="text-brand-blue hover:underline text-sm font-semibold"
-                                data-ocid={`admin.billing_customers.link.${i + 1}`}
-                              >
-                                {custInvoices.length} invoice
-                                {custInvoices.length !== 1 ? "s" : ""}
-                              </button>
-                            </td>
-                            <td className="p-4 text-center">
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={async () => {
-                                  if (
-                                    window.confirm(
-                                      `Delete customer "${cust.name}"?`,
-                                    )
-                                  ) {
-                                    await backendDeleteBillingCustomer(
-                                      actor,
-                                      cust.id,
-                                    );
-                                    invalidate(["billingCustomers"]);
-                                  }
-                                }}
-                                className="border-red-200 text-red-600 hover:bg-red-50 h-8 px-2"
-                                data-ocid={`admin.billing_customers.delete_button.${i + 1}`}
-                              >
-                                <Trash2 className="w-3 h-3" />
-                              </Button>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </Card>
-            )}
-          </div>
-        )}
-
         {/* ===== CREATE / EDIT INVOICE FORM ===== */}
         {view === "create" && (
           <div className="animate-fade-in">
@@ -3102,63 +2720,15 @@ export default function AdminDashboardPage() {
                     <Label className="text-brand-blue font-semibold">
                       Customer Name *
                     </Label>
-                    <div className="relative mt-1">
-                      <input
-                        type="text"
-                        value={form.customerName}
-                        onChange={(e) => {
-                          setForm((prev) => ({
-                            ...prev,
-                            customerName: e.target.value,
-                          }));
-                          setCustomerComboOpen(e.target.value.length > 0);
-                        }}
-                        onBlur={() =>
-                          setTimeout(() => setCustomerComboOpen(false), 200)
-                        }
-                        placeholder="Type or search customer name..."
-                        required
-                        className="w-full border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue/30"
-                        data-ocid="admin.invoices.input"
-                      />
-                      {customerComboOpen &&
-                        billingCustomers.filter((c) =>
-                          c.name
-                            .toLowerCase()
-                            .includes(form.customerName.toLowerCase()),
-                        ).length > 0 && (
-                          <div className="absolute z-50 w-full bg-background border border-border rounded-lg shadow-lg mt-1 max-h-48 overflow-y-auto">
-                            {billingCustomers
-                              .filter((c) =>
-                                c.name
-                                  .toLowerCase()
-                                  .includes(form.customerName.toLowerCase()),
-                              )
-                              .map((c) => (
-                                <button
-                                  key={c.id}
-                                  type="button"
-                                  className="w-full text-left px-3 py-2 text-sm hover:bg-muted flex justify-between items-center"
-                                  onMouseDown={() => {
-                                    setForm((prev) => ({
-                                      ...prev,
-                                      customerName: c.name,
-                                      phone: c.phone,
-                                    }));
-                                    setCustomerComboOpen(false);
-                                  }}
-                                >
-                                  <span className="font-semibold">
-                                    {c.name}
-                                  </span>
-                                  <span className="text-muted-foreground text-xs">
-                                    {c.phone}
-                                  </span>
-                                </button>
-                              ))}
-                          </div>
-                        )}
-                    </div>
+                    <Input
+                      value={form.customerName}
+                      onChange={(e) =>
+                        setForm((p) => ({ ...p, customerName: e.target.value }))
+                      }
+                      placeholder="Full name"
+                      required
+                      className="mt-1"
+                    />
                   </div>
                   <div>
                     <Label className="text-brand-blue font-semibold">
@@ -3211,29 +2781,6 @@ export default function AdminDashboardPage() {
                       placeholder="Customer address"
                       className="mt-1"
                     />
-                  </div>
-                  <div>
-                    <Label className="text-brand-blue font-semibold">
-                      Payment Status
-                    </Label>
-                    <select
-                      value={form.paymentStatus}
-                      onChange={(e) =>
-                        setForm((prev) => ({
-                          ...prev,
-                          paymentStatus: e.target.value as
-                            | "unpaid"
-                            | "partial"
-                            | "paid",
-                        }))
-                      }
-                      className="w-full mt-1 border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue/30 bg-background"
-                      data-ocid="admin.invoices.select"
-                    >
-                      <option value="unpaid">Unpaid / Pending</option>
-                      <option value="partial">Partial Payment</option>
-                      <option value="paid">Full Payment Done</option>
-                    </select>
                   </div>
                 </CardContent>
               </Card>
@@ -3546,7 +3093,7 @@ export default function AdminDashboardPage() {
               </CardHeader>
               <CardContent>
                 <form
-                  onSubmit={async (e) => {
+                  onSubmit={(e) => {
                     e.preventDefault();
                     if (!companyForm.name.trim()) return;
                     const newCompany = {
@@ -3555,8 +3102,11 @@ export default function AdminDashboardPage() {
                       logo: companyForm.logo,
                     };
                     const updated = [...companies, newCompany];
-                    await saveCompanies(actor, updated);
-                    invalidate(["companies"]);
+                    setCompanies(updated);
+                    localStorage.setItem(
+                      "idpc_companies",
+                      JSON.stringify(updated),
+                    );
                     setCompanyForm({ name: "", logo: "" });
                     if (companyLogoRef.current)
                       companyLogoRef.current.value = "";
@@ -3657,12 +3207,15 @@ export default function AdminDashboardPage() {
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={async () => {
+                        onClick={() => {
                           const updated = companies.filter(
                             (c) => c.id !== company.id,
                           );
-                          await saveCompanies(actor, updated);
-                          invalidate(["companies"]);
+                          setCompanies(updated);
+                          localStorage.setItem(
+                            "idpc_companies",
+                            JSON.stringify(updated),
+                          );
                         }}
                         className="text-destructive hover:bg-destructive/10 border-destructive/30 flex-shrink-0"
                       >

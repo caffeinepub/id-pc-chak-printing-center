@@ -12,10 +12,12 @@ import {
   useBillingItems,
   useCompanies,
   useContactMessages,
+  useGallery,
   useInvalidate,
   useInvoices,
   useOrders,
   usePendingReviews,
+  useVisionMission,
 } from "@/hooks/useQueries";
 import {
   backendAddBillingCustomer,
@@ -39,11 +41,14 @@ import {
   backendUpdateOrder,
   backendUpdateReview,
   backendUpdateService,
+  compressImage,
   fetchCustomers,
   saveAboutStats,
   saveBannerImage,
   saveCompanies,
+  saveGallery,
   saveLogo,
+  saveVisionMission,
 } from "@/lib/backendData";
 import {
   type BillingCustomer,
@@ -139,6 +144,7 @@ type Tab =
   | "banner"
   | "logo"
   | "about"
+  | "gallery"
   | "customers"
   | "companies"
   | "billing-customers";
@@ -279,6 +285,16 @@ export default function AdminDashboardPage() {
   const [companyForm, setCompanyForm] = useState({ name: "", logo: "" });
   const companyLogoRef = useRef<HTMLInputElement>(null);
 
+  // Gallery state (via React Query - real-time sync)
+  const { data: gallery = [] } = useGallery();
+  const galleryUploadRef = useRef<HTMLInputElement>(null);
+
+  // Vision & Mission state
+  const { data: visionMission = { vision: "", mission: "" } } =
+    useVisionMission();
+  const [visionText, setVisionText] = useState("");
+  const [missionText, setMissionText] = useState("");
+
   const unreadCount = contactMessages.filter((m) => !m.isRead).length;
   const pendingReviewCount = pendingReviews.length;
 
@@ -296,6 +312,12 @@ export default function AdminDashboardPage() {
     setAboutYears(localStorage.getItem("idpc_years_experience") || "10+");
     setAboutClients(localStorage.getItem("idpc_num_clients") || "1000+");
   }, [navigate]);
+
+  // Sync vision/mission text when data loads
+  useEffect(() => {
+    if (visionMission.vision) setVisionText(visionMission.vision);
+    if (visionMission.mission) setMissionText(visionMission.mission);
+  }, [visionMission.vision, visionMission.mission]);
 
   // Load customers when customers tab becomes active
   useEffect(() => {
@@ -720,7 +742,9 @@ export default function AdminDashboardPage() {
 
   async function handleSaveLogo() {
     if (!logoPreview) return;
-    await saveLogo(actor, logoPreview);
+    const compressed = await compressImage(logoPreview, 400, 0.8);
+    await saveLogo(actor, compressed);
+    setLogoPreview(compressed);
     invalidate(["logo"]);
     alert("Logo updated successfully!");
   }
@@ -735,7 +759,9 @@ export default function AdminDashboardPage() {
 
   async function handleSaveBanner() {
     if (!bannerPreview) return;
-    await saveBannerImage(actor, bannerPreview);
+    const compressed = await compressImage(bannerPreview, 800, 0.7);
+    await saveBannerImage(actor, compressed);
+    setBannerPreview(compressed);
     invalidate(["bannerImage"]);
     alert("Homepage banner image updated successfully!");
   }
@@ -880,6 +906,11 @@ export default function AdminDashboardPage() {
       key: "billing-customers" as Tab,
       label: "Billing Customers",
       icon: <Users className="w-4 h-4" />,
+    },
+    {
+      key: "gallery" as Tab,
+      label: "Gallery",
+      icon: <Image className="w-4 h-4" />,
     },
   ];
 
@@ -2677,6 +2708,57 @@ export default function AdminDashboardPage() {
                 </Button>
               </CardContent>
             </Card>
+
+            {/* Vision & Mission */}
+            <Card className="border-2 border-border shadow-card max-w-2xl mt-6">
+              <CardContent className="p-6 space-y-5">
+                <div>
+                  <h2 className="font-heading font-bold text-lg text-brand-blue mb-1 flex items-center gap-2">
+                    <span>👁️</span> Vision & Mission
+                  </h2>
+                  <p className="text-muted-foreground text-sm mb-4">
+                    These appear on the homepage Vision & Mission section.
+                  </p>
+                </div>
+                <div>
+                  <Label className="text-brand-blue font-semibold">
+                    Our Vision
+                  </Label>
+                  <Textarea
+                    value={visionText}
+                    onChange={(e) => setVisionText(e.target.value)}
+                    placeholder="e.g. To be the most trusted printing center in Sindh..."
+                    rows={3}
+                    className="mt-1"
+                    data-ocid="admin.vision.textarea"
+                  />
+                </div>
+                <div>
+                  <Label className="text-brand-blue font-semibold">
+                    Our Mission
+                  </Label>
+                  <Textarea
+                    value={missionText}
+                    onChange={(e) => setMissionText(e.target.value)}
+                    placeholder="e.g. To provide affordable, high-quality printing services..."
+                    rows={3}
+                    className="mt-1"
+                    data-ocid="admin.mission.textarea"
+                  />
+                </div>
+                <Button
+                  onClick={async () => {
+                    await saveVisionMission(actor, visionText, missionText);
+                    invalidate(["visionMission"]);
+                    alert("Vision & Mission updated successfully!");
+                  }}
+                  className="bg-brand-blue text-white hover:bg-brand-blue-dark w-full"
+                  data-ocid="admin.vision_mission.save_button"
+                >
+                  <Info className="w-4 h-4 mr-2" /> Save Vision & Mission
+                </Button>
+              </CardContent>
+            </Card>
           </div>
         )}
 
@@ -3675,6 +3757,118 @@ export default function AdminDashboardPage() {
             )}
           </div>
         )}
+        {/* ===== GALLERY TAB ===== */}
+        {view === "list" && tab === "gallery" && (
+          <div className="animate-fade-in">
+            <div className="mb-6 flex items-center justify-between">
+              <div>
+                <h1 className="font-heading font-bold text-2xl text-brand-blue flex items-center gap-2">
+                  <Image className="w-6 h-6 text-brand-gold" />
+                  Homepage Gallery
+                </h1>
+                <p className="text-muted-foreground text-sm">
+                  Upload images for the gallery section on the homepage. Changes
+                  reflect live.
+                </p>
+              </div>
+              <div className="bg-brand-blue/10 text-brand-blue font-heading font-bold text-2xl rounded-2xl px-5 py-3 border border-brand-blue/20">
+                {gallery.length}{" "}
+                <span className="text-sm font-normal">images</span>
+              </div>
+            </div>
+
+            {/* Upload Section */}
+            <Card className="border-2 border-border shadow-card mb-6">
+              <CardContent className="p-6">
+                <Label className="text-brand-blue font-semibold block mb-2">
+                  Upload Images (multiple allowed)
+                </Label>
+                <input
+                  ref={galleryUploadRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  className="block w-full text-sm text-muted-foreground file:mr-3 file:py-1.5 file:px-3 file:rounded file:border-0 file:text-xs file:bg-brand-blue file:text-white mb-3"
+                  data-ocid="admin.gallery.upload_button"
+                  onChange={async (e) => {
+                    const files = Array.from(e.target.files || []);
+                    if (!files.length) return;
+                    const newImages: string[] = [];
+                    for (const file of files) {
+                      const dataUrl = await new Promise<string>((res) => {
+                        const reader = new FileReader();
+                        reader.onload = (ev) =>
+                          res(ev.target?.result as string);
+                        reader.readAsDataURL(file);
+                      });
+                      const compressed = await compressImage(dataUrl, 600, 0.7);
+                      newImages.push(compressed);
+                    }
+                    const updated = [...gallery, ...newImages];
+                    await saveGallery(actor, updated);
+                    invalidate(["gallery"]);
+                    if (galleryUploadRef.current)
+                      galleryUploadRef.current.value = "";
+                  }}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Recommended: square or landscape photos of your work. Max ~5MB
+                  each before compression.
+                </p>
+              </CardContent>
+            </Card>
+
+            {/* Gallery Grid */}
+            {gallery.length === 0 ? (
+              <div
+                className="text-center py-16 border-2 border-dashed border-border rounded-2xl text-muted-foreground"
+                data-ocid="admin.gallery.empty_state"
+              >
+                <Image className="w-12 h-12 mx-auto mb-3 opacity-30" />
+                <p className="font-semibold">No gallery images yet</p>
+                <p className="text-sm">
+                  Upload images above to show them on the homepage gallery.
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+                {gallery.map((img, i) => (
+                  <div
+                    // biome-ignore lint/suspicious/noArrayIndexKey: gallery images ordered by position
+                    key={`gallery-admin-img-${i}`}
+                    className="relative group aspect-square rounded-xl overflow-hidden border-2 border-border shadow-card"
+                    data-ocid={`admin.gallery.item.${i + 1}`}
+                  >
+                    <img
+                      src={img}
+                      alt={`Gallery ${i + 1}`}
+                      className="w-full h-full object-cover"
+                    />
+                    <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={async () => {
+                          if (!window.confirm("Remove this image?")) return;
+                          const updated = gallery.filter((_, idx) => idx !== i);
+                          await saveGallery(actor, updated);
+                          invalidate(["gallery"]);
+                        }}
+                        data-ocid={`admin.gallery.delete_button.${i + 1}`}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
+                    <div className="absolute top-2 left-2 bg-black/60 text-white text-xs px-2 py-0.5 rounded-full">
+                      {i + 1}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* ===== VIEW INVOICE ===== */}
         {view === "view-invoice" && selectedInvoice && (
           <div className="animate-fade-in">

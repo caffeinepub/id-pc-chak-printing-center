@@ -58,6 +58,11 @@ export default function ContactPage() {
     }
   }
 
+  const businessHours = [
+    { day: "Saturday – Thursday", hours: "9:00 AM – 9:00 PM" },
+    { day: "Friday", hours: "9:00 AM – 1:00 PM, then 3:00 PM – 9:00 PM" },
+  ];
+
   return (
     <main className="py-16">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -70,14 +75,14 @@ export default function ContactPage() {
             Contact Us
           </h1>
           <p className="text-muted-foreground max-w-xl mx-auto">
-            Have a project in mind? We'd love to help. Send us a message and
-            we'll get back to you as soon as possible.
+            Have a project in mind? We&apos;d love to help. Send us a message
+            and we&apos;ll get back to you as soon as possible.
           </p>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
           {/* Contact Info */}
-          <div className="space-y-6 animate-fade-in-up">
+          <div className="space-y-4 animate-fade-in-up">
             <h2 className="font-heading font-bold text-2xl text-brand-blue">
               Contact Information
             </h2>
@@ -93,7 +98,7 @@ export default function ContactPage() {
                 icon: MapPin,
                 label: "Address",
                 value:
-                  "Rustam Road Chak Near nako Number 1 Chak District Shikarpur",
+                  "Rustam Road Chak Near Nako Number 1 Chak District Shikarpur",
                 color: "bg-amber-100",
               },
               {
@@ -101,13 +106,6 @@ export default function ContactPage() {
                 label: "Email Address",
                 value: "ihsanprintingcnetrechak@gmail.com",
                 color: "bg-red-100",
-              },
-              {
-                icon: Clock,
-                label: "Business Hours",
-                value:
-                  "Mon - Sat: 9:00 AM - 8:00 PM\nSunday: 10:00 AM - 5:00 PM",
-                color: "bg-purple-100",
               },
             ].map((info) => (
               <Card
@@ -131,6 +129,35 @@ export default function ContactPage() {
                 </CardContent>
               </Card>
             ))}
+
+            {/* Business Hours Card */}
+            <Card className="border-2 border-border shadow-card">
+              <CardContent className="p-5 flex items-start gap-4">
+                <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                  <Clock className="w-5 h-5 text-brand-blue" />
+                </div>
+                <div className="flex-1">
+                  <p className="font-semibold text-brand-blue text-sm mb-2">
+                    Business Hours
+                  </p>
+                  <div className="space-y-1.5">
+                    {businessHours.map((bh) => (
+                      <div
+                        key={bh.day}
+                        className="flex flex-col sm:flex-row sm:gap-2"
+                      >
+                        <span className="text-sm font-medium text-brand-blue min-w-[160px]">
+                          {bh.day}:
+                        </span>
+                        <span className="text-sm text-muted-foreground">
+                          {bh.hours}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
           </div>
 
           {/* Contact Form */}
@@ -259,6 +286,33 @@ export default function ContactPage() {
             </Card>
           </div>
         </div>
+
+        {/* Google Maps Section */}
+        <section className="mt-16">
+          <div className="text-center mb-8">
+            <p className="text-brand-gold font-semibold text-sm uppercase tracking-widest mb-2">
+              Our Location
+            </p>
+            <h2 className="font-heading font-bold text-3xl text-brand-blue">
+              Find Us on Map
+            </h2>
+            <p className="text-muted-foreground mt-2">
+              Rustam Road Chak Near Nako Number 1 Chak, District Shikarpur
+            </p>
+          </div>
+          <div className="rounded-xl overflow-hidden shadow-lg border-2 border-brand-blue-mid">
+            <iframe
+              src="https://maps.google.com/maps?q=Rustam+Road+Chak+Near+Nako+Number+1+Chak+District+Shikarpur&output=embed"
+              width="100%"
+              height="400"
+              style={{ border: 0 }}
+              allowFullScreen
+              loading="lazy"
+              referrerPolicy="no-referrer-when-downgrade"
+              title="ID&PC Chak Location"
+            />
+          </div>
+        </section>
       </div>
     </main>
   );

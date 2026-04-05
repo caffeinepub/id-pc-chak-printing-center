@@ -17,12 +17,14 @@ import {
   fetchCompanies,
   fetchContactMessages,
   fetchEmployees,
+  fetchGallery,
   fetchInvoices,
   fetchLogo,
   fetchOrders,
   fetchPendingReviews,
   fetchReviews,
   fetchServices,
+  fetchVisionMission,
 } from "@/lib/backendData";
 import {
   type BillingItem,
@@ -233,6 +235,54 @@ export function useBillingCustomers() {
       if (!data) return [];
       const parsed: FEBillingCustomer[] = JSON.parse(data);
       return parsed.map((c) => ({ ...c, address: c.address ?? "" }));
+    },
+    staleTime: 0,
+    refetchInterval: POLL_INTERVAL,
+    refetchIntervalInBackground: true,
+  });
+}
+
+export function useGallery() {
+  const { actor, isFetching } = useActor();
+  return useQuery<string[]>({
+    queryKey: ["gallery"],
+    queryFn: () => fetchGallery(actor),
+    enabled: !isFetching,
+    initialData: (): string[] => {
+      try {
+        const raw = localStorage.getItem("idpc_extended_data");
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          return parsed.gallery || [];
+        }
+      } catch {
+        // ignore
+      }
+      return [];
+    },
+    staleTime: 0,
+    refetchInterval: POLL_INTERVAL,
+    refetchIntervalInBackground: true,
+  });
+}
+
+export function useVisionMission() {
+  const { actor, isFetching } = useActor();
+  return useQuery<{ vision: string; mission: string }>({
+    queryKey: ["visionMission"],
+    queryFn: () => fetchVisionMission(actor),
+    enabled: !isFetching,
+    initialData: (): { vision: string; mission: string } => {
+      try {
+        const raw = localStorage.getItem("idpc_extended_data");
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          return { vision: parsed.vision || "", mission: parsed.mission || "" };
+        }
+      } catch {
+        // ignore
+      }
+      return { vision: "", mission: "" };
     },
     staleTime: 0,
     refetchInterval: POLL_INTERVAL,

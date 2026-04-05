@@ -3,6 +3,14 @@
  * Async functions for reading/writing data via the ICP backend canister.
  * Falls back to localStorage if backend is unavailable.
  * All data written to backend is also cached in localStorage.
+ *
+ * IMAGE STORAGE STRATEGY:
+ * Employee photos and service images cannot be stored as ExternalBlob (Uint8Array)
+ * on the backend because ExternalBlob.fromURL(base64) fails in practice.
+ * Instead, we store all images (employee photos, service images, gallery, vision,
+ * mission) inside a single extended JSON blob using setCompaniesJson.
+ * Format: { companies, employeePhotos, serviceImages, gallery, vision, mission }
+ * Each image is compressed to ~30-50KB before storage to stay within ICP limits.
  */
 
 import type {
@@ -66,6 +74,145 @@ export interface Company {
   id: string;
   name: string;
   logo: string; // base64 or empty string
+}
+
+// -----------------------------------------------------------------------
+// Extended data format stored in getCompaniesJson / setCompaniesJson
+// -----------------------------------------------------------------------
+
+interface ExtendedData {
+  companies: Company[];
+  employeePhotos: Record<string, string>; // employeeId -> compressed base64
+  serviceImages: Record<string, string>; // serviceId -> compressed base64
+  gallery: string[]; // array of compressed base64 images
+  vision: string;
+  mission: string;
+}
+
+function parseExtendedData(json: string): ExtendedData {
+  try {
+    const parsed = JSON.parse(json);
+    if (Array.isArray(parsed)) {
+      // Legacy format — just companies array
+      return {
+        companies: parsed as Company[],
+        employeePhotos: {},
+        serviceImages: {},
+        gallery: [],
+        vision: "",
+        mission: "",
+      };
+    }
+    return {
+      companies: parsed.companies || [],
+      employeePhotos: parsed.employeePhotos || {},
+      serviceImages: parsed.serviceImages || {},
+      gallery: parsed.gallery || [],
+      vision: parsed.vision || "",
+      mission: parsed.mission || "",
+    };
+  } catch {
+    return {
+      companies: [],
+      employeePhotos: {},
+      serviceImages: {},
+      gallery: [],
+      vision: "",
+      mission: "",
+    };
+  }
+}
+
+const EXTENDED_LS_KEY = "idpc_extended_data";
+
+function getLocalExtendedData(): ExtendedData {
+  const raw = localStorage.getItem(EXTENDED_LS_KEY);
+  if (raw) return parseExtendedData(raw);
+  // Fallback: migrate legacy companies data
+  const legacyCompanies = localStorage.getItem("idpc_companies");
+  if (legacyCompanies) return parseExtendedData(legacyCompanies);
+  return {
+    companies: [],
+    employeePhotos: {},
+    serviceImages: {},
+    gallery: [],
+    vision: "",
+    mission: "",
+  };
+}
+
+function saveLocalExtendedData(data: ExtendedData): void {
+  const json = JSON.stringify(data);
+  localStorage.setItem(EXTENDED_LS_KEY, json);
+  // Keep legacy key in sync for backwards compatibility
+  localStorage.setItem("idpc_companies", JSON.stringify(data.companies));
+}
+
+async function fetchExtendedData(
+  actor: backendInterface | null,
+): Promise<ExtendedData> {
+  try {
+    if (actor) {
+      const json = await actor.getCompaniesJson();
+      if (json?.trim()) {
+        const data = parseExtendedData(json);
+        saveLocalExtendedData(data);
+        return data;
+      }
+    }
+  } catch (e) {
+    console.warn("fetchExtendedData backend error", e);
+  }
+  return getLocalExtendedData();
+}
+
+async function saveExtendedData(
+  actor: backendInterface | null,
+  data: ExtendedData,
+): Promise<void> {
+  saveLocalExtendedData(data);
+  if (actor) {
+    try {
+      const json = JSON.stringify(data);
+      await actor.setCompaniesJson(json);
+    } catch (e) {
+      console.warn("saveExtendedData backend error", e);
+    }
+  }
+}
+
+// -----------------------------------------------------------------------
+// Image compression helper
+// -----------------------------------------------------------------------
+
+/**
+ * Compress an image data URL to reduce its size before sending to backend.
+ * ICP has ~2MB message limits, so we aggressively resize to keep images small.
+ */
+export async function compressImage(
+  dataUrl: string,
+  maxSize = 300,
+  quality = 0.55,
+): Promise<string> {
+  if (!dataUrl || !dataUrl.startsWith("data:")) return dataUrl;
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      const scale = Math.min(1, maxSize / Math.max(img.width, img.height, 1));
+      canvas.width = Math.round(img.width * scale);
+      canvas.height = Math.round(img.height * scale);
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        resolve(dataUrl);
+        return;
+      }
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      resolve(canvas.toDataURL("image/jpeg", quality));
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
 }
 
 // -----------------------------------------------------------------------
@@ -161,12 +308,24 @@ export async function fetchServices(
 ): Promise<FEService[]> {
   try {
     if (actor) {
-      // Primary: use JSON storage which includes full image data
-      const json = await (actor as any).getServicesJson();
-      if (json) {
-        const services = JSON.parse(json) as FEService[];
-        saveServices(services);
-        return services;
+      const [backendServices, extData] = await Promise.all([
+        actor.getAllServices(),
+        fetchExtendedData(actor),
+      ]);
+      if (backendServices.length > 0) {
+        const decoded = backendServices.map((s) => ({
+          id: s.id.toString(),
+          name: s.name,
+          description: s.description,
+          price: s.price,
+          icon: s.icon,
+          // ExternalBlob (Uint8Array) cannot be used directly — use image map instead
+          image: extData.serviceImages[s.id.toString()] || "",
+          inStock: s.inStock,
+          discount: Number(s.discount),
+        }));
+        saveServices(decoded);
+        return decoded;
       }
     }
   } catch (e) {
@@ -180,21 +339,52 @@ export async function backendAddService(
   svc: Omit<FEService, "id">,
 ): Promise<FEService> {
   const id = BigInt(Date.now());
-  const newSvc: FEService = { ...svc, id: id.toString() };
-  // Save to localStorage immediately
+  const idStr = id.toString();
+  const newSvc: FEService = { ...svc, id: idStr };
   const current = getServices();
   saveServices([...current, newSvc]);
+
+  // Compress image and store in extended data
+  const compressedImage = svc.image
+    ? await compressImage(svc.image, 250, 0.6)
+    : "";
   if (actor) {
     try {
-      // Save full JSON (including image) to backend
-      await (actor as any).setServicesJson(
-        JSON.stringify([...current, newSvc]),
-      );
+      const extData = await fetchExtendedData(actor);
+      extData.serviceImages[idStr] = compressedImage;
+      await saveExtendedData(actor, extData);
+
+      // Add service to backend (pass empty bytes for ExternalBlob field)
+      await actor.addService({
+        id,
+        name: svc.name,
+        description: svc.description,
+        price: svc.price,
+        icon: svc.icon || "",
+        image: {
+          getBytes: async () => new Uint8Array(0),
+          getDirectURL: () => "",
+          withUploadProgress: () => ({
+            getBytes: async () => new Uint8Array(0),
+            getDirectURL: () => "",
+            withUploadProgress: () => null as never,
+          }),
+        } as never,
+        inStock: svc.inStock ?? true,
+        discount: BigInt(Math.round(svc.discount || 0)),
+      });
     } catch (e) {
       console.warn("backendAddService error", e);
     }
+  } else {
+    // No actor — just store in localStorage extended data
+    const extData = getLocalExtendedData();
+    extData.serviceImages[idStr] = compressedImage;
+    saveLocalExtendedData(extData);
   }
-  return newSvc;
+
+  // Return with compressed image so UI shows it immediately
+  return { ...newSvc, image: compressedImage };
 }
 
 export async function backendUpdateService(
@@ -204,12 +394,42 @@ export async function backendUpdateService(
   const current = getServices();
   const updated = current.map((s) => (s.id === svc.id ? svc : s));
   saveServices(updated);
+
+  const compressedImage = svc.image
+    ? await compressImage(svc.image, 250, 0.6)
+    : "";
+
   if (actor) {
     try {
-      await (actor as any).setServicesJson(JSON.stringify(updated));
+      const extData = await fetchExtendedData(actor);
+      extData.serviceImages[svc.id] = compressedImage;
+      await saveExtendedData(actor, extData);
+
+      await actor.updateService(BigInt(svc.id), {
+        id: BigInt(svc.id),
+        name: svc.name,
+        description: svc.description,
+        price: svc.price,
+        icon: svc.icon || "",
+        image: {
+          getBytes: async () => new Uint8Array(0),
+          getDirectURL: () => "",
+          withUploadProgress: () => ({
+            getBytes: async () => new Uint8Array(0),
+            getDirectURL: () => "",
+            withUploadProgress: () => null as never,
+          }),
+        } as never,
+        inStock: svc.inStock ?? true,
+        discount: BigInt(Math.round(svc.discount || 0)),
+      });
     } catch (e) {
       console.warn("backendUpdateService error", e);
     }
+  } else {
+    const extData = getLocalExtendedData();
+    extData.serviceImages[svc.id] = compressedImage;
+    saveLocalExtendedData(extData);
   }
 }
 
@@ -218,14 +438,20 @@ export async function backendDeleteService(
   id: string,
 ): Promise<void> {
   const current = getServices();
-  const updated = current.filter((s) => s.id !== id);
-  saveServices(updated);
+  saveServices(current.filter((s) => s.id !== id));
   if (actor) {
     try {
-      await (actor as any).setServicesJson(JSON.stringify(updated));
+      const extData = await fetchExtendedData(actor);
+      delete extData.serviceImages[id];
+      await saveExtendedData(actor, extData);
+      await actor.deleteService(BigInt(id));
     } catch (e) {
       console.warn("backendDeleteService error", e);
     }
+  } else {
+    const extData = getLocalExtendedData();
+    delete extData.serviceImages[id];
+    saveLocalExtendedData(extData);
   }
 }
 
@@ -238,12 +464,25 @@ export async function fetchEmployees(
 ): Promise<FEEmployee[]> {
   try {
     if (actor) {
-      // Primary: use JSON storage which includes full photo data
-      const json = await (actor as any).getEmployeesJson();
-      if (json) {
-        const employees = JSON.parse(json) as FEEmployee[];
-        saveEmployees(employees);
-        return employees;
+      const [backendEmployees, extData] = await Promise.all([
+        actor.getAllEmployees(),
+        fetchExtendedData(actor),
+      ]);
+      if (backendEmployees.length > 0) {
+        const decoded = backendEmployees.map((e) => ({
+          id: e.id.toString(),
+          fullName: e.fullName,
+          fatherName: e.fatherName,
+          age: e.age.toString(),
+          cnic: e.cnic,
+          mobile: e.mobile,
+          bloodGroup: e.bloodGroup,
+          designation: e.designation,
+          // ExternalBlob (Uint8Array) cannot be used directly — use photo map instead
+          photo: extData.employeePhotos[e.id.toString()] || "",
+        }));
+        saveEmployees(decoded);
+        return decoded;
       }
     }
   } catch (e) {
@@ -257,19 +496,50 @@ export async function backendAddEmployee(
   emp: Omit<FEEmployee, "id">,
 ): Promise<FEEmployee> {
   const id = BigInt(Date.now());
-  const newEmp: FEEmployee = { ...emp, id: id.toString() };
+  const idStr = id.toString();
+  const newEmp: FEEmployee = { ...emp, id: idStr };
   const current = getEmployees();
   saveEmployees([...current, newEmp]);
+
+  const compressedPhoto = emp.photo
+    ? await compressImage(emp.photo, 250, 0.65)
+    : "";
+
   if (actor) {
     try {
-      await (actor as any).setEmployeesJson(
-        JSON.stringify([...current, newEmp]),
-      );
+      const extData = await fetchExtendedData(actor);
+      extData.employeePhotos[idStr] = compressedPhoto;
+      await saveExtendedData(actor, extData);
+
+      await actor.addEmployee({
+        id,
+        fullName: emp.fullName,
+        fatherName: emp.fatherName,
+        age: BigInt(Number.parseInt(emp.age) || 0),
+        cnic: emp.cnic,
+        mobile: emp.mobile,
+        bloodGroup: emp.bloodGroup,
+        designation: emp.designation,
+        photo: {
+          getBytes: async () => new Uint8Array(0),
+          getDirectURL: () => "",
+          withUploadProgress: () => ({
+            getBytes: async () => new Uint8Array(0),
+            getDirectURL: () => "",
+            withUploadProgress: () => null as never,
+          }),
+        } as never,
+      });
     } catch (e) {
       console.warn("backendAddEmployee error", e);
     }
+  } else {
+    const extData = getLocalExtendedData();
+    extData.employeePhotos[idStr] = compressedPhoto;
+    saveLocalExtendedData(extData);
   }
-  return newEmp;
+
+  return { ...newEmp, photo: compressedPhoto };
 }
 
 export async function backendUpdateEmployee(
@@ -277,14 +547,44 @@ export async function backendUpdateEmployee(
   emp: FEEmployee,
 ): Promise<void> {
   const current = getEmployees();
-  const updated = current.map((e) => (e.id === emp.id ? emp : e));
-  saveEmployees(updated);
+  saveEmployees(current.map((e) => (e.id === emp.id ? emp : e)));
+
+  const compressedPhoto = emp.photo
+    ? await compressImage(emp.photo, 250, 0.65)
+    : "";
+
   if (actor) {
     try {
-      await (actor as any).setEmployeesJson(JSON.stringify(updated));
+      const extData = await fetchExtendedData(actor);
+      extData.employeePhotos[emp.id] = compressedPhoto;
+      await saveExtendedData(actor, extData);
+
+      await actor.updateEmployee(BigInt(emp.id), {
+        id: BigInt(emp.id),
+        fullName: emp.fullName,
+        fatherName: emp.fatherName,
+        age: BigInt(Number.parseInt(emp.age) || 0),
+        cnic: emp.cnic,
+        mobile: emp.mobile,
+        bloodGroup: emp.bloodGroup,
+        designation: emp.designation,
+        photo: {
+          getBytes: async () => new Uint8Array(0),
+          getDirectURL: () => "",
+          withUploadProgress: () => ({
+            getBytes: async () => new Uint8Array(0),
+            getDirectURL: () => "",
+            withUploadProgress: () => null as never,
+          }),
+        } as never,
+      });
     } catch (e) {
       console.warn("backendUpdateEmployee error", e);
     }
+  } else {
+    const extData = getLocalExtendedData();
+    extData.employeePhotos[emp.id] = compressedPhoto;
+    saveLocalExtendedData(extData);
   }
 }
 
@@ -292,15 +592,20 @@ export async function backendDeleteEmployee(
   actor: backendInterface | null,
   id: string,
 ): Promise<void> {
-  const current = getEmployees();
-  const updated = current.filter((e) => e.id !== id);
-  saveEmployees(updated);
+  saveEmployees(getEmployees().filter((e) => e.id !== id));
   if (actor) {
     try {
-      await (actor as any).setEmployeesJson(JSON.stringify(updated));
+      const extData = await fetchExtendedData(actor);
+      delete extData.employeePhotos[id];
+      await saveExtendedData(actor, extData);
+      await actor.deleteEmployee(BigInt(id));
     } catch (e) {
       console.warn("backendDeleteEmployee error", e);
     }
+  } else {
+    const extData = getLocalExtendedData();
+    delete extData.employeePhotos[id];
+    saveLocalExtendedData(extData);
   }
 }
 
@@ -351,7 +656,6 @@ export async function fetchApprovedReviews(
   } catch (e) {
     console.warn("fetchApprovedReviews backend error", e);
   }
-  // Fallback: filter LS reviews that are approved or have no status
   return getReviews().filter((r) => !r.status || r.status === "approved");
 }
 
@@ -411,7 +715,6 @@ export async function backendUpdateReview(
   actor: backendInterface | null,
   review: FEReview,
 ): Promise<void> {
-  // Update LS
   const reviews = getReviews();
   const updated = reviews.map((r) => (r.id === review.id ? review : r));
   saveReviews(updated);
@@ -456,7 +759,6 @@ export async function fetchInvoices(
       const backendInvoices = await actor.getAllInvoices();
       if (backendInvoices.length > 0) {
         const lsInvoices = getInvoices();
-        // Merge backend IDs with LS full data
         const merged = backendInvoices.map((bi) => {
           const lsMatch = lsInvoices.find(
             (li) =>
@@ -486,7 +788,6 @@ export async function fetchInvoices(
             terms: "",
           } as FEInvoice;
         });
-        // Also include LS invoices not in backend
         for (const lsInv of lsInvoices) {
           if (!merged.find((m) => m.id === lsInv.id)) {
             merged.push(lsInv);
@@ -852,34 +1153,77 @@ export async function backendDeleteBillingItem(
 export async function fetchCompanies(
   actor: backendInterface | null,
 ): Promise<Company[]> {
-  try {
-    if (actor) {
-      const json = await actor.getCompaniesJson();
-      if (json) {
-        const companies = JSON.parse(json) as Company[];
-        localStorage.setItem("idpc_companies", json);
-        return companies;
-      }
-    }
-  } catch (e) {
-    console.warn("fetchCompanies backend error", e);
-  }
-  const data = localStorage.getItem("idpc_companies");
-  return data ? JSON.parse(data) : [];
+  const extData = await fetchExtendedData(actor);
+  return extData.companies;
 }
 
 export async function saveCompanies(
   actor: backendInterface | null,
   companies: Company[],
 ): Promise<void> {
-  const json = JSON.stringify(companies);
-  localStorage.setItem("idpc_companies", json);
   if (actor) {
-    try {
-      await actor.setCompaniesJson(json);
-    } catch (e) {
-      console.warn("saveCompanies backend error", e);
-    }
+    const extData = await fetchExtendedData(actor);
+    extData.companies = companies;
+    await saveExtendedData(actor, extData);
+  } else {
+    const extData = getLocalExtendedData();
+    extData.companies = companies;
+    saveLocalExtendedData(extData);
+  }
+}
+
+// -----------------------------------------------------------------------
+// Gallery
+// -----------------------------------------------------------------------
+
+export async function fetchGallery(
+  actor: backendInterface | null,
+): Promise<string[]> {
+  const extData = await fetchExtendedData(actor);
+  return extData.gallery;
+}
+
+export async function saveGallery(
+  actor: backendInterface | null,
+  images: string[],
+): Promise<void> {
+  if (actor) {
+    const extData = await fetchExtendedData(actor);
+    extData.gallery = images;
+    await saveExtendedData(actor, extData);
+  } else {
+    const extData = getLocalExtendedData();
+    extData.gallery = images;
+    saveLocalExtendedData(extData);
+  }
+}
+
+// -----------------------------------------------------------------------
+// Vision & Mission
+// -----------------------------------------------------------------------
+
+export async function fetchVisionMission(
+  actor: backendInterface | null,
+): Promise<{ vision: string; mission: string }> {
+  const extData = await fetchExtendedData(actor);
+  return { vision: extData.vision, mission: extData.mission };
+}
+
+export async function saveVisionMission(
+  actor: backendInterface | null,
+  vision: string,
+  mission: string,
+): Promise<void> {
+  if (actor) {
+    const extData = await fetchExtendedData(actor);
+    extData.vision = vision;
+    extData.mission = mission;
+    await saveExtendedData(actor, extData);
+  } else {
+    const extData = getLocalExtendedData();
+    extData.vision = vision;
+    extData.mission = mission;
+    saveLocalExtendedData(extData);
   }
 }
 
@@ -909,7 +1253,6 @@ export async function fetchBillingCustomers(
   }
   const data = localStorage.getItem("idpc_billing_customers");
   if (!data) return [];
-  // Ensure address field exists for legacy data
   const parsed: FEBillingCustomer[] = JSON.parse(data);
   return parsed.map((c) => ({ ...c, address: c.address ?? "" }));
 }

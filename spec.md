@@ -2,72 +2,56 @@
 
 ## Current State
 
-The website is live and functional. However 4 issues have been identified:
+The app has a React frontend + Motoko backend. All data (employees, services, companies, logo, banner) is fetched from backend every 5 seconds via polling. The core problem is:
 
-1. **Real-time sync broken** for bannerImage, employees, and companies — these 3 data types are stored in localStorage only and never synced to the ICP backend. This means changes made on one device (admin's phone) don't appear on other devices or the live site.
-   - `fetchBannerImage()` does NOT call backend at all
-   - `fetchEmployees()` does NOT call backend at all  
-   - `getCompanies()` in AboutPage is loaded only once in `useEffect([])` — no polling
+1. **Images (employee photos, service images, company logos) use `ExternalBlob.fromURL()` in frontend code** — this silently fails for base64 data URLs because ExternalBlob is designed for CDN URLs, not inline data. Result: images are saved only to localStorage on the uploader's device, never reach the backend, so other devices see empty photos.
 
-2. **Billing customers** have no `address` field — only `name` and `phone`.
+2. **Logo and Banner use `actor.setLogo(dataUrl)` / `actor.setBannerImage(dataUrl)** — these store full base64 strings (can be 1-2MB) in backend stable memory. ICP has a per-message 2MB limit — large images silently fail to save.
 
-3. **Invoice search** only searches by customer name. No phone number or invoice number search.
-
-4. **Sales report** has no date range filter — only Daily (today) / Weekly (last 7 days) / Monthly (current month). Cannot view past dates.
+3. **Homepage has a Services section** — user wants to remove it and replace with: (a) a picture gallery section (admin uploads pictures), (b) a Vision & Mission section (admin can edit the text).
 
 ## Requested Changes (Diff)
 
 ### Add
-- Backend: `BillingCustomer` type with `address` field, `getAllBillingCustomers`, `addBillingCustomer`, `deleteBillingCustomer`, `updateBillingCustomer` methods
-- Backend: `bannerImage` stored as a text variable with `getBannerImage` / `setBannerImage` methods
-- Backend: companies stored as JSON text with `getCompanies` / `setCompanies` methods  
-- Frontend: `useCompanies` React Query hook that polls backend every 5 seconds
-- Frontend: Invoice search — add phone number search (inv.phone.includes) and invoice number search (inv.id.includes)
-- Frontend: Sales report — add "Custom Date Range" option with start date + end date pickers
-- Frontend: Billing customer add/edit form — add `address` field
-- Frontend: Billing customers table — show address column
+- `HomepageGallery` backend storage: backend should store an array of gallery image URLs (base64) as a JSON string, similar to how companies are stored — `getGalleryJson` / `setGalleryJson`
+- `VisionMission` backend storage: backend stores vision text and mission text — `getVisionMission` / `setVisionMission` returning `{ vision: string, mission: string }`
+- Homepage: new "Gallery" section showing images uploaded by admin (grid layout)
+- Homepage: new "Vision & Mission" section showing vision and mission text
+- Admin Panel: new "Gallery" tab — admin can upload multiple images, delete them
+- Admin Panel: "About Stats" tab (already exists) — add Vision & Mission text fields
 
 ### Modify
-- `fetchBannerImage` in backendData.ts — call `actor.getBannerImage()` backend method
-- `saveBannerImage` in backendData.ts — call `actor.setBannerImage()` backend method
-- `fetchEmployees` in backendData.ts — call `actor.getAllEmployees()` backend method
-- `backendAddEmployee` — call `actor.addEmployee()` backend method
-- `backendUpdateEmployee` — call `actor.updateEmployee()` backend method
-- AboutPage.tsx — replace one-time `useEffect` companies load with `useCompanies()` hook
-- AdminDashboardPage.tsx — update billing customers CRUD to include address field; update invoice search filter; update reports date filter
-- storage.ts — add `address` field to `BillingCustomer` interface
+- **Fix image storage for employees and services**: Instead of using `ExternalBlob.fromURL()` with base64 data, store employee photos and service images as base64 strings directly in backend using JSON fields (same approach as logo/banner but compressed). The backend should have `photo` field as `text` (string), not `ExternalBlob`. This requires backend regeneration.
+- **Fix logo and banner sync**: Logo and banner are already stored as strings in backend (getLogo/setBannerImage). The issue is `fetchServices` and `fetchEmployees` try to call `s.image.getDirectURL()` on ExternalBlob — fix this to treat `image` as plain string in backend.
+- **Remove Services section from Homepage** — replace with Gallery section + Vision/Mission section
+- `fetchServices`: remove `ExternalBlob.getDirectURL()` call, treat image as plain string
+- `fetchEmployees`: remove `ExternalBlob.getDirectURL()` call, treat photo as plain string
+- `backendAddService` / `backendUpdateService`: remove `ExternalBlob.fromURL()`, pass image as plain string
+- `backendAddEmployee` / `backendUpdateEmployee`: remove `ExternalBlob.fromURL()`, pass photo as plain string
+- Compress images to max 200KB before saving to backend (use canvas resize)
 
 ### Remove
-- Nothing removed
+- Services section from `HomePage.tsx`
+- `ExternalBlob` usage for employee photos and service images
 
 ## Implementation Plan
 
-1. Update `src/backend/main.mo`:
-   - Add `bannerImage` text variable + `getBannerImage`/`setBannerImage` functions
-   - Add `companiesJson` text variable + `getCompanies`/`setCompanies` functions
-   - Add `BillingCustomer` type with id, name, phone, address fields
-   - Add `billingCustomers` Map with full CRUD methods
-   - Employee backend already has full CRUD — just need frontend to use it
+1. **Regenerate Motoko backend** — change `Employee.photo` and `Service.image` from `ExternalBlob` to `Text` (plain string). Add `getVisionMission`/`setVisionMission` and `getGalleryJson`/`setGalleryJson` methods.
 
-2. Update `src/frontend/src/lib/backendData.ts`:
-   - Fix `fetchBannerImage` / `saveBannerImage` to use backend
-   - Fix `fetchEmployees` / `backendAddEmployee` / `backendUpdateEmployee` to use backend
-   - Add `fetchCompanies` / `saveCompanies` backend functions
-   - Add `fetchBillingCustomers` / `backendAddBillingCustomer` / `backendDeleteBillingCustomer` / `backendUpdateBillingCustomer`
+2. **Update `backendData.ts`**:
+   - Remove all `ExternalBlob.fromURL()` and `.getDirectURL()` calls
+   - Treat photo/image as plain string (base64)
+   - Add image compression helper (resize to max 800px, quality 0.7 JPEG) before saving to backend
+   - Add `fetchVisionMission`, `saveVisionMission`, `fetchGallery`, `saveGallery` functions
 
-3. Update `src/frontend/src/lib/storage.ts`:
-   - Add `address` field to `BillingCustomer` interface
-   - Add `getBillingCustomers` / `saveBillingCustomers` / `addBillingCustomer` helper functions with address support
+3. **Update `useQueries.ts`**: add `useVisionMission` and `useGallery` hooks with 5s polling
 
-4. Update `src/frontend/src/hooks/useQueries.ts`:
-   - Add `useCompanies` hook with 5s polling
-   - Add `useBillingCustomers` hook with 5s polling
+4. **Update `HomePage.tsx`**: remove Services section, add Gallery section (grid of images) and Vision/Mission section
 
-5. Update `src/frontend/src/pages/AboutPage.tsx`:
-   - Replace one-time companies `useEffect` with `useCompanies()` hook
+5. **Update `AdminDashboardPage.tsx`**: 
+   - Add Gallery tab (upload images, delete images)
+   - Add Vision/Mission fields to About Stats tab (or new tab)
+   - Fix employee add/edit to compress images before saving
+   - Fix service add/edit to compress images before saving
 
-6. Update `src/frontend/src/pages/AdminDashboardPage.tsx`:
-   - Add address field to billing customer add/edit form and table
-   - Update invoice search to include phone number and invoice number
-   - Add custom date range filter to reports tab
-   - Wire billing customers to use backend via `useBillingCustomers` hook
+6. The `declarations/backend.did.d.ts` will be regenerated — `Employee.photo` and `Service.image` will be `string` instead of `ExternalBlob`

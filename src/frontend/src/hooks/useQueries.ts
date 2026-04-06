@@ -55,7 +55,7 @@ export function useLogo() {
   return useQuery<string>({
     queryKey: ["logo"],
     queryFn: () => fetchLogo(actor),
-    enabled: !isFetching,
+    enabled: !isFetching && !!actor,
     initialData: getLogo,
     staleTime: 0,
     refetchInterval: POLL_INTERVAL,
@@ -68,7 +68,7 @@ export function useBannerImage() {
   return useQuery<string>({
     queryKey: ["bannerImage"],
     queryFn: () => fetchBannerImage(actor),
-    enabled: !isFetching,
+    enabled: !isFetching && !!actor,
     initialData: getBannerImage,
     staleTime: 0,
     refetchInterval: POLL_INTERVAL,
@@ -82,7 +82,7 @@ export function useServices() {
   return useQuery({
     queryKey: ["services"],
     queryFn: () => fetchServices(actor),
-    enabled: !isFetching,
+    enabled: !isFetching && !!actor,
     staleTime: 0,
     refetchInterval: POLL_INTERVAL,
     refetchIntervalInBackground: true,
@@ -95,7 +95,7 @@ export function useEmployees() {
   return useQuery({
     queryKey: ["employees"],
     queryFn: () => fetchEmployees(actor),
-    enabled: !isFetching,
+    enabled: !isFetching && !!actor,
     staleTime: 0,
     refetchInterval: POLL_INTERVAL,
     refetchIntervalInBackground: true,
@@ -107,7 +107,7 @@ export function useReviews() {
   return useQuery({
     queryKey: ["reviews"],
     queryFn: () => fetchReviews(actor),
-    enabled: !isFetching,
+    enabled: !isFetching && !!actor,
     initialData: getReviews,
     staleTime: 0,
     refetchInterval: POLL_INTERVAL,
@@ -120,7 +120,7 @@ export function useApprovedReviews() {
   return useQuery<Review[]>({
     queryKey: ["approvedReviews"],
     queryFn: () => fetchApprovedReviews(actor),
-    enabled: !isFetching,
+    enabled: !isFetching && !!actor,
     initialData: () =>
       getReviews().filter((r) => !r.status || r.status === "approved"),
     staleTime: 0,
@@ -134,7 +134,7 @@ export function usePendingReviews() {
   return useQuery<Review[]>({
     queryKey: ["pendingReviews"],
     queryFn: () => fetchPendingReviews(actor),
-    enabled: !isFetching,
+    enabled: !isFetching && !!actor,
     initialData: () => getReviews().filter((r) => r.status === "pending"),
     staleTime: 0,
     refetchInterval: POLL_INTERVAL,
@@ -147,7 +147,7 @@ export function useInvoices() {
   return useQuery({
     queryKey: ["invoices"],
     queryFn: () => fetchInvoices(actor),
-    enabled: !isFetching,
+    enabled: !isFetching && !!actor,
     initialData: getInvoices,
     staleTime: 0,
     refetchInterval: POLL_INTERVAL,
@@ -160,7 +160,7 @@ export function useOrders() {
   return useQuery({
     queryKey: ["orders"],
     queryFn: () => fetchOrders(actor),
-    enabled: !isFetching,
+    enabled: !isFetching && !!actor,
     initialData: getOrders,
     staleTime: 0,
     refetchInterval: POLL_INTERVAL,
@@ -173,7 +173,7 @@ export function useContactMessages() {
   return useQuery({
     queryKey: ["contactMessages"],
     queryFn: () => fetchContactMessages(actor),
-    enabled: !isFetching,
+    enabled: !isFetching && !!actor,
     initialData: getContactMessages,
     staleTime: 0,
     refetchInterval: POLL_INTERVAL,
@@ -186,7 +186,7 @@ export function useBillingItems() {
   return useQuery<BillingItem[]>({
     queryKey: ["billingItems"],
     queryFn: () => fetchBillingItems(actor),
-    enabled: !isFetching,
+    enabled: !isFetching && !!actor,
     initialData: getBillingItems,
     staleTime: 0,
     refetchInterval: POLL_INTERVAL,
@@ -201,7 +201,7 @@ export function useAboutStats() {
   return useQuery({
     queryKey: ["aboutStats"],
     queryFn: () => fetchAboutStats(actor),
-    enabled: !isFetching,
+    enabled: !isFetching && !!actor,
     // Use localStorage as initial value only (will be replaced by backend fetch)
     initialData: () => ({
       yearsExperience: localStorage.getItem("idpc_years_experience") || "10+",
@@ -218,7 +218,7 @@ export function useCompanies() {
   return useQuery<Company[]>({
     queryKey: ["companies"],
     queryFn: () => fetchCompanies(actor),
-    enabled: !isFetching,
+    enabled: !isFetching && !!actor,
     staleTime: 0,
     refetchInterval: POLL_INTERVAL,
     refetchIntervalInBackground: true,
@@ -231,7 +231,7 @@ export function useBillingCustomers() {
   return useQuery<FEBillingCustomer[]>({
     queryKey: ["billingCustomers"],
     queryFn: () => fetchBillingCustomers(actor),
-    enabled: !isFetching,
+    enabled: !isFetching && !!actor,
     initialData: () =>
       getBillingCustomers().map((c) => ({ ...c, address: c.address ?? "" })),
     staleTime: 0,
@@ -245,7 +245,7 @@ export function useGallery() {
   return useQuery<string[]>({
     queryKey: ["gallery"],
     queryFn: () => fetchGallery(actor),
-    enabled: !isFetching,
+    enabled: !isFetching && !!actor,
     initialData: (): string[] => {
       try {
         const raw = localStorage.getItem("idpc_extended_data");
@@ -269,7 +269,7 @@ export function useVisionMission() {
   return useQuery<{ vision: string; mission: string }>({
     queryKey: ["visionMission"],
     queryFn: () => fetchVisionMission(actor),
-    enabled: !isFetching,
+    enabled: !isFetching && !!actor,
     initialData: (): { vision: string; mission: string } => {
       try {
         const raw = localStorage.getItem("idpc_extended_data");
@@ -294,7 +294,7 @@ export function useProducts() {
   return useQuery({
     queryKey: ["products"],
     queryFn: () => fetchProducts(actor),
-    enabled: !isFetching,
+    enabled: !isFetching && !!actor,
     staleTime: 0,
     refetchInterval: 5_000,
     refetchIntervalInBackground: true,

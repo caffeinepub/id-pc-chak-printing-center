@@ -53,7 +53,7 @@ export interface Service {
     name: string;
     description: string;
     discount: bigint;
-    image: ExternalBlob;
+    image: string;
     price: string;
 }
 export interface AboutStats {
@@ -122,7 +122,7 @@ export interface Employee {
     fatherName: string;
     bloodGroup: string;
     mobile: string;
-    photo: ExternalBlob;
+    photoUrl: string;
 }
 export interface Review {
     id: bigint;

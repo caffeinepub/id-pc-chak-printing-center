@@ -66,7 +66,7 @@ export interface Employee {
   'fatherName' : string,
   'bloodGroup' : string,
   'mobile' : string,
-  'photo' : ExternalBlob,
+  'photoUrl' : string,
 }
 export type ExternalBlob = Uint8Array;
 export interface Invoice {
@@ -123,7 +123,7 @@ export interface Service {
   'name' : string,
   'description' : string,
   'discount' : bigint,
-  'image' : ExternalBlob,
+  'image' : string,
   'price' : string,
 }
 export interface _CaffeineStorageCreateCertificateResult {

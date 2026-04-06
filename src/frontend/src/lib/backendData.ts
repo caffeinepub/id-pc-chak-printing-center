@@ -15,7 +15,6 @@
  * Each image is compressed to ~30-50KB before storage to stay within ICP limits.
  */
 
-import { ExternalBlob } from "@/backend";
 import type {
   Invoice as BackendInvoice,
   CustomerAccount,
@@ -225,13 +224,22 @@ async function fetchExtendedData(
     }
   } catch (e) {
     console.warn("fetchExtendedData backend error", e);
-    // On error: return local data but do NOT cache — allows retry on next poll
-    return getLocalExtendedData();
+    // On error: return last known good cache (not localStorage — that is device-local and
+    // would show wrong data on other devices). Allow retry on next poll by NOT updating cache.
+    return (
+      _extDataCache ?? {
+        companies: [],
+        employeePhotos: {},
+        serviceImages: {},
+        gallery: [],
+        vision: "",
+        mission: "",
+      }
+    );
   }
-  const local = getLocalExtendedData();
-  _extDataCache = local;
-  _extDataCacheTime = Date.now();
-  return local;
+  // actor is null (still loading) — return localStorage data WITHOUT caching it.
+  // Once the actor loads, the next call will fetch from backend and update the cache.
+  return getLocalExtendedData();
 }
 
 function safeParseJson(json: string): Record<string, unknown> {
@@ -465,7 +473,7 @@ export async function backendAddService(
         description: svc.description,
         price: svc.price,
         icon: svc.icon || "",
-        image: ExternalBlob.fromBytes(new Uint8Array(0)),
+        image: "",
         inStock: svc.inStock ?? true,
         discount: BigInt(Math.round(svc.discount || 0)),
       });
@@ -511,7 +519,7 @@ export async function backendUpdateService(
         description: svc.description,
         price: svc.price,
         icon: svc.icon || "",
-        image: ExternalBlob.fromBytes(new Uint8Array(0)),
+        image: "",
         inStock: svc.inStock ?? true,
         discount: BigInt(Math.round(svc.discount || 0)),
       });
@@ -591,6 +599,13 @@ export async function fetchEmployees(
       }));
       // FIX: Always return backend result — no localStorage fallback.
       // Backend is single source of truth for employees.
+      // Also sync to localStorage so same-device updates work immediately.
+      try {
+        const { saveEmployees } = await import("./storage");
+        saveEmployees(decoded);
+      } catch {
+        /* ignore */
+      }
       return decoded;
     }
   } catch (e) {
@@ -625,7 +640,7 @@ export async function backendAddEmployee(
         mobile: emp.mobile,
         bloodGroup: emp.bloodGroup,
         designation: emp.designation,
-        photo: ExternalBlob.fromBytes(new Uint8Array(0)),
+        photoUrl: "",
       });
 
       // STEP 2: Save photo directly to employeesJson (bypass full extData to avoid overwriting concurrent changes)
@@ -681,7 +696,7 @@ export async function backendUpdateEmployee(
         mobile: emp.mobile,
         bloodGroup: emp.bloodGroup,
         designation: emp.designation,
-        photo: ExternalBlob.fromBytes(new Uint8Array(0)),
+        photoUrl: "",
       });
 
       // STEP 2: Update photo directly in employeesJson

@@ -9,6 +9,33 @@ import Storage "blob-storage/Storage";
 
 
 actor {
+  // ===== LEGACY V1 TYPES (kept for stable variable compatibility) =====
+  // These types match what was stored in the canister before the migration.
+  // Do NOT remove them — the stable variables 'employees' and 'services' still
+  // use these types and will be migrated to V2 on first access.
+  type EmployeeV1 = {
+    id : Nat;
+    fullName : Text;
+    fatherName : Text;
+    age : Nat;
+    cnic : Text;
+    mobile : Text;
+    bloodGroup : Text;
+    photo : Blob;
+    designation : Text;
+  };
+
+  type ServiceV1 = {
+    id : Nat;
+    name : Text;
+    description : Text;
+    price : Text;
+    icon : Text;
+    image : Blob;
+    inStock : Bool;
+    discount : Nat;
+  };
+
   type InvoiceItem = {
     srNo : Nat;
     particular : Text;
@@ -36,7 +63,7 @@ actor {
     description : Text;
     price : Text;
     icon : Text;
-    image : Storage.ExternalBlob;
+    image : Text;
     inStock : Bool;
     discount : Nat;
   };
@@ -49,7 +76,7 @@ actor {
     cnic : Text;
     mobile : Text;
     bloodGroup : Text;
-    photo : Storage.ExternalBlob;
+    photoUrl : Text;
     designation : Text;
   };
 
@@ -164,8 +191,15 @@ actor {
 
   var adminPassword : Text = "";
   let products = Map.empty<Nat, Product>();
-  let services = Map.empty<Nat, Service>();
-  let employees = Map.empty<Nat, Employee>();
+  // V1 maps — kept for stable variable compatibility.
+  // New data goes into V2 maps below; V1 maps are only read during migration.
+  let services = Map.empty<Nat, ServiceV1>();
+  let employees = Map.empty<Nat, EmployeeV1>();
+  // V2 maps — use new types with Text fields instead of Blob
+  let servicesV2 = Map.empty<Nat, Service>();
+  let employeesV2 = Map.empty<Nat, Employee>();
+  var employeesMigrated : Bool = false;
+  var servicesMigrated : Bool = false;
   let reviews = Map.empty<Nat, Review>();
 
   // MIGRATION: Keep old invoice map as InvoiceV1 so stable variable is compatible.
@@ -213,6 +247,51 @@ actor {
           paymentStatus = "unpaid";
           userId = "";
           terms = "";
+        });
+      };
+    };
+  };
+
+  // ===== EMPLOYEES V1 -> V2 MIGRATION =====
+  // Copies old employees (with Blob photo) into employeesV2 (with Text photoUrl = "")
+  // Photos are stored separately in employeesJson so photoUrl starts as empty string.
+  func ensureEmployeesMigrated() {
+    if (employeesMigrated) return;
+    employeesMigrated := true;
+    for ((k, v) in employees.toArray().vals()) {
+      if (not employeesV2.containsKey(k)) {
+        employeesV2.add(k, {
+          id = v.id;
+          fullName = v.fullName;
+          fatherName = v.fatherName;
+          age = v.age;
+          cnic = v.cnic;
+          mobile = v.mobile;
+          bloodGroup = v.bloodGroup;
+          designation = v.designation;
+          photoUrl = "";
+        });
+      };
+    };
+  };
+
+  // ===== SERVICES V1 -> V2 MIGRATION =====
+  // Copies old services (with Blob image) into servicesV2 (with Text image = "")
+  // Images are stored separately in servicesJson so image starts as empty string.
+  func ensureServicesMigrated() {
+    if (servicesMigrated) return;
+    servicesMigrated := true;
+    for ((k, v) in services.toArray().vals()) {
+      if (not servicesV2.containsKey(k)) {
+        servicesV2.add(k, {
+          id = v.id;
+          name = v.name;
+          description = v.description;
+          price = v.price;
+          icon = v.icon;
+          image = "";
+          inStock = v.inStock;
+          discount = v.discount;
         });
       };
     };
@@ -309,56 +388,64 @@ actor {
 
   // ===== SERVICES CRUD =====
 
-  public query func getAllServices() : async [Service] {
-    services.values().toArray();
+  public shared func getAllServices() : async [Service] {
+    ensureServicesMigrated();
+    servicesV2.values().toArray();
   };
 
   public query func getService(id : Nat) : async ?Service {
-    services.get(id);
+    servicesV2.get(id);
   };
 
   public shared ({ caller }) func addService(s : Service) : async () {
-    services.add(s.id, s);
+    ensureServicesMigrated();
+    servicesV2.add(s.id, s);
   };
 
   public shared ({ caller }) func updateService(id : Nat, s : Service) : async Bool {
-    if (services.containsKey(id)) {
-      services.add(id, s);
+    ensureServicesMigrated();
+    if (servicesV2.containsKey(id)) {
+      servicesV2.add(id, s);
       true;
     } else { false };
   };
 
   public shared ({ caller }) func deleteService(id : Nat) : async Bool {
-    if (services.containsKey(id)) {
-      services.remove(id);
+    ensureServicesMigrated();
+    if (servicesV2.containsKey(id)) {
+      servicesV2.remove(id);
       true;
     } else { false };
   };
 
   // ===== EMPLOYEES CRUD =====
 
-  public query func getAllEmployees() : async [Employee] {
-    employees.values().toArray();
+  public shared func getAllEmployees() : async [Employee] {
+    ensureEmployeesMigrated();
+    employeesV2.values().toArray();
   };
 
   public query func getEmployee(id : Nat) : async ?Employee {
-    employees.get(id);
+    employeesV2.get(id);
   };
 
   public shared ({ caller }) func addEmployee(e : Employee) : async () {
-    employees.add(e.id, e);
+    ensureEmployeesMigrated();
+    employeesV2.add(e.id, e);
   };
 
   public shared ({ caller }) func updateEmployee(id : Nat, e : Employee) : async Bool {
-    if (employees.containsKey(id)) {
-      employees.add(id, e);
+    ensureEmployeesMigrated();
+    if (employeesV2.containsKey(id)) {
+      employeesV2.add(id, e);
       true;
     } else { false };
   };
 
   public shared ({ caller }) func deleteEmployee(id : Nat) : async Bool {
-    if (employees.containsKey(id)) {
-      employees.remove(id);
+    ensureEmployeesMigrated();
+    if (employeesV2.containsKey(id)) {
+      employeesV2.remove(id);
       true;
     } else { false };
   };

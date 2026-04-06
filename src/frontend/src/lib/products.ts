@@ -89,11 +89,13 @@ export async function backendAddProduct(
 ): Promise<FEProduct> {
   if (!actor) throw new Error("Actor not available");
   const now = BigInt(Date.now());
+  // FIX: Add random suffix to prevent ID collisions on rapid adds
+  const id = now * BigInt(1000) + BigInt(Math.floor(Math.random() * 1000));
   const compressedImage = product.image
     ? await compressImage(product.image)
     : "";
   const p = {
-    id: now,
+    id,
     name: product.name,
     description: product.description,
     price: product.price,
@@ -104,7 +106,7 @@ export async function backendAddProduct(
   };
   await actor.addProduct(p);
   return {
-    id: now.toString(),
+    id: id.toString(),
     name: p.name,
     description: p.description,
     price: p.price,
@@ -146,6 +148,8 @@ export async function backendDeleteProduct(
 
 // -----------------------------------------------------------------------
 // One-time migration: old services → new products
+// FIXED: Guard now prevents running when migration is already done,
+// regardless of product count. This prevents duplicate creation.
 // -----------------------------------------------------------------------
 
 export async function migrateServicesToProducts(
@@ -153,12 +157,11 @@ export async function migrateServicesToProducts(
 ): Promise<void> {
   if (!actor) return;
   try {
-    const [done, existingProducts] = await Promise.all([
-      actor.getMigrationDone(),
-      actor.getAllProducts(),
-    ]);
-    // If migration was marked done but products are empty, force re-run
-    if (done && existingProducts.length > 0) return;
+    const done = await actor.getMigrationDone();
+
+    // FIX: If migration is marked done, ALWAYS skip — don't check product count.
+    // This prevents re-running and creating duplicate products.
+    if (done) return;
 
     const [services, servicesJsonRaw] = await Promise.all([
       actor.getAllServices(),
@@ -176,6 +179,14 @@ export async function migrateServicesToProducts(
     }
 
     if (services.length > 0) {
+      // Check if products already exist to avoid duplicates even without migration flag
+      const existingProducts = await actor.getAllProducts();
+      if (existingProducts.length > 0) {
+        // Products already exist, just mark migration done
+        await actor.setMigrationDone(true);
+        return;
+      }
+
       const now = Date.now();
       await Promise.all(
         services.map((s, idx) => {

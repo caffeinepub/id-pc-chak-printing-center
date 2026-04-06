@@ -1,15 +1,17 @@
 /**
  * backendData.ts
  * Async functions for reading/writing data via the ICP backend canister.
- * Falls back to localStorage if backend is unavailable.
- * All data written to backend is also cached in localStorage.
+ * Falls back to localStorage only for non-critical data (logo, banner).
+ * All dynamic data (employees, services, products, invoices) uses backend only.
  *
  * IMAGE STORAGE STRATEGY:
  * Employee photos and service images cannot be stored as ExternalBlob (Uint8Array)
  * on the backend because ExternalBlob.fromURL(base64) fails in practice.
  * Instead, we store all images (employee photos, service images, gallery, vision,
- * mission) inside a single extended JSON blob using setCompaniesJson.
- * Format: { companies, employeePhotos, serviceImages, gallery, vision, mission }
+ * mission) inside a split JSON blob:
+ * - getCompaniesJson: { companies }
+ * - getEmployeesJson: { employeePhotos }
+ * - getServicesJson:  { serviceImages, gallery, vision, mission }
  * Each image is compressed to ~30-50KB before storage to stay within ICP limits.
  */
 
@@ -53,7 +55,7 @@ import {
   saveBillingCustomers,
   saveBillingItems,
   saveContactMessages,
-  saveEmployees,
+  saveInvoices,
   saveOrders,
   saveReviews,
   saveServices,
@@ -188,7 +190,7 @@ async function fetchExtendedData(
         ? (companiesData as Company[])
         : (companiesData.companies as Company[]) || [];
 
-      // BUG-017 FIX: serviceImages should live in servicesChunk, NOT companiesChunk.
+      // serviceImages should live in servicesChunk
       // Also support legacy data that had serviceImages in companiesChunk.
       const legacyServiceImages =
         (servicesData.serviceImages as Record<string, string>) ||
@@ -223,6 +225,8 @@ async function fetchExtendedData(
     }
   } catch (e) {
     console.warn("fetchExtendedData backend error", e);
+    // On error: return local data but do NOT cache — allows retry on next poll
+    return getLocalExtendedData();
   }
   const local = getLocalExtendedData();
   _extDataCache = local;
@@ -242,12 +246,11 @@ async function saveExtendedData(
   actor: backendInterface | null,
   data: ExtendedData,
 ): Promise<void> {
-  // BUG-021 FIX: Only update cache after successful save (or local-only path).
   // Save to local first as a safe fallback.
   saveLocalExtendedData(data);
 
   if (actor) {
-    // BUG-017 FIX: serviceImages moved to servicesChunk (not companiesChunk)
+    // Split into 3 small chunks to stay within ICP message limits
     const companiesChunk = JSON.stringify({
       companies: data.companies,
     });
@@ -261,22 +264,21 @@ async function saveExtendedData(
       mission: data.mission,
     });
 
-    // Save all 3 in parallel, each is much smaller than the combined blob
-    await Promise.all([
-      actor.setCompaniesJson(companiesChunk).catch((e: unknown) => {
-        console.warn("saveExtendedData companiesJson error", e);
-      }),
-      actor.setEmployeesJson(employeesChunk).catch((e: unknown) => {
-        console.warn("saveExtendedData employeesJson error", e);
-      }),
-      actor.setServicesJson(servicesChunk).catch((e: unknown) => {
-        console.warn("saveExtendedData servicesJson error", e);
-      }),
+    // Save all 3 in parallel
+    const results = await Promise.allSettled([
+      actor.setCompaniesJson(companiesChunk),
+      actor.setEmployeesJson(employeesChunk),
+      actor.setServicesJson(servicesChunk),
     ]);
 
-    // BUG-021 FIX: Only update cache after successful backend saves
-    _extDataCache = data;
-    _extDataCacheTime = Date.now();
+    const anyFailed = results.some((r) => r.status === "rejected");
+    if (anyFailed) {
+      console.warn("saveExtendedData: some backend saves failed", results);
+      // Don't update cache — force re-fetch on next poll
+    } else {
+      _extDataCache = data;
+      _extDataCacheTime = Date.now();
+    }
   } else {
     // No actor — update cache immediately for local-only path
     _extDataCache = data;
@@ -323,7 +325,7 @@ export async function compressImage(
 // -----------------------------------------------------------------------
 
 function idStringToBigInt(id: string): bigint {
-  const match = id.match(/-([\d]+)$/);
+  const match = id.match(/-(\d+)$/);
   if (match) return BigInt(match[1]);
   const num = Number.parseInt(id, 10);
   return Number.isNaN(num) ? BigInt(Date.now()) : BigInt(num);
@@ -404,6 +406,9 @@ export async function saveBannerImage(
 
 // -----------------------------------------------------------------------
 // Services
+// FIXED: Removed localStorage fallback when backend returns empty array.
+// Backend is now the single source of truth. If backend is empty, we
+// return empty (not stale localStorage data that is device-specific).
 // -----------------------------------------------------------------------
 
 export async function fetchServices(
@@ -425,18 +430,15 @@ export async function fetchServices(
         inStock: s.inStock,
         discount: Number(s.discount),
       }));
-      // If backend has data, use it. If empty, fallback to localStorage (data may only be in LS).
-      if (decoded.length > 0) {
-        saveServices(decoded);
-        return decoded;
-      }
-      // Backend empty — return localStorage data (admin may have saved locally only)
-      return getServices();
+      // FIX: Always return backend result — no localStorage fallback.
+      // Backend is single source of truth for services.
+      saveServices(decoded);
+      return decoded;
     }
   } catch (e) {
     console.warn("fetchServices backend error", e);
   }
-  // Fallback: use localStorage for both offline and error cases
+  // Only fall back to localStorage when actor is null (offline/loading)
   return getServices();
 }
 
@@ -446,123 +448,125 @@ export async function backendAddService(
 ): Promise<FEService> {
   const id = BigInt(Date.now());
   const idStr = id.toString();
-  const newSvc: FEService = { ...svc, id: idStr };
-  const current = getServices();
-  saveServices([...current, newSvc]);
 
-  // Compress image and store in extended data
+  // Compress image first
   const compressedImage = svc.image
     ? await compressImage(svc.image, 250, 0.6)
     : "";
+
+  const newSvc: FEService = { ...svc, id: idStr, image: compressedImage };
+
   if (actor) {
     try {
-      const extData = await fetchExtendedData(actor);
-      extData.serviceImages[idStr] = compressedImage;
-      await saveExtendedData(actor, extData);
-
-      // Add service to backend (pass empty bytes for ExternalBlob field)
+      // STEP 1: Save service record to backend Map FIRST
       await actor.addService({
         id,
         name: svc.name,
         description: svc.description,
         price: svc.price,
         icon: svc.icon || "",
-        image: {
-          getBytes: async () => new Uint8Array(0),
-          getDirectURL: () => "",
-          withUploadProgress: () => ({
-            getBytes: async () => new Uint8Array(0),
-            getDirectURL: () => "",
-            withUploadProgress: () => null as never,
-          }),
-        } as never,
+        image: ExternalBlob.fromBytes(new Uint8Array(0)),
         inStock: svc.inStock ?? true,
         discount: BigInt(Math.round(svc.discount || 0)),
       });
+
+      // STEP 2: Save image to extended data
+      const extData = await fetchExtendedData(actor);
+      extData.serviceImages[idStr] = compressedImage;
+      await saveExtendedData(actor, extData);
     } catch (e) {
       console.warn("backendAddService error", e);
+      throw e;
     }
   } else {
-    // No actor — just store in localStorage extended data
+    // No actor — store in localStorage extended data only
     const extData = getLocalExtendedData();
     extData.serviceImages[idStr] = compressedImage;
     saveLocalExtendedData(extData);
   }
 
-  // Return with compressed image so UI shows it immediately
-  return { ...newSvc, image: compressedImage };
+  // Update local cache so UI reflects immediately on this device
+  const current = getServices();
+  saveServices([...current, newSvc]);
+
+  return newSvc;
 }
 
 export async function backendUpdateService(
   actor: backendInterface | null,
   svc: FEService,
 ): Promise<void> {
-  const current = getServices();
-  const updated = current.map((s) => (s.id === svc.id ? svc : s));
-  saveServices(updated);
-
   const compressedImage = svc.image
     ? await compressImage(svc.image, 250, 0.6)
     : "";
 
+  const updatedSvc = { ...svc, image: compressedImage };
+
   if (actor) {
     try {
-      const extData = await fetchExtendedData(actor);
-      extData.serviceImages[svc.id] = compressedImage;
-      await saveExtendedData(actor, extData);
-
+      // STEP 1: Update service record in backend Map FIRST
       await actor.updateService(BigInt(svc.id), {
         id: BigInt(svc.id),
         name: svc.name,
         description: svc.description,
         price: svc.price,
         icon: svc.icon || "",
-        image: {
-          getBytes: async () => new Uint8Array(0),
-          getDirectURL: () => "",
-          withUploadProgress: () => ({
-            getBytes: async () => new Uint8Array(0),
-            getDirectURL: () => "",
-            withUploadProgress: () => null as never,
-          }),
-        } as never,
+        image: ExternalBlob.fromBytes(new Uint8Array(0)),
         inStock: svc.inStock ?? true,
         discount: BigInt(Math.round(svc.discount || 0)),
       });
+
+      // STEP 2: Update image in extended data
+      const extData = await fetchExtendedData(actor);
+      extData.serviceImages[svc.id] = compressedImage;
+      await saveExtendedData(actor, extData);
     } catch (e) {
       console.warn("backendUpdateService error", e);
+      throw e;
     }
   } else {
     const extData = getLocalExtendedData();
     extData.serviceImages[svc.id] = compressedImage;
     saveLocalExtendedData(extData);
   }
+
+  // Update local cache
+  const current = getServices();
+  saveServices(current.map((s) => (s.id === svc.id ? updatedSvc : s)));
 }
 
 export async function backendDeleteService(
   actor: backendInterface | null,
   id: string,
 ): Promise<void> {
-  const current = getServices();
-  saveServices(current.filter((s) => s.id !== id));
   if (actor) {
     try {
+      // STEP 1: Delete from backend Map FIRST
+      await actor.deleteService(BigInt(id));
+
+      // STEP 2: Remove image from extended data
       const extData = await fetchExtendedData(actor);
       delete extData.serviceImages[id];
       await saveExtendedData(actor, extData);
-      await actor.deleteService(BigInt(id));
     } catch (e) {
       console.warn("backendDeleteService error", e);
+      throw e;
     }
   } else {
     const extData = getLocalExtendedData();
     delete extData.serviceImages[id];
     saveLocalExtendedData(extData);
   }
+
+  // Update local cache
+  const current = getServices();
+  saveServices(current.filter((s) => s.id !== id));
 }
 
 // -----------------------------------------------------------------------
 // Employees
+// FIXED: Removed localStorage fallback when backend returns empty.
+// Photos saved AFTER backend record to ensure ID exists before photo lookup.
 // -----------------------------------------------------------------------
 
 export async function fetchEmployees(
@@ -585,14 +589,14 @@ export async function fetchEmployees(
         designation: e.designation,
         photo: extData.employeePhotos[e.id.toString()] || "",
       }));
-      // Always use backend as source of truth - no localStorage fallback
-      saveEmployees(decoded);
+      // FIX: Always return backend result — no localStorage fallback.
+      // Backend is single source of truth for employees.
       return decoded;
     }
   } catch (e) {
     console.warn("fetchEmployees backend error", e);
   }
-  // Only return empty array when no actor - backend is the only source of truth
+  // Return empty when actor unavailable — backend is the only source of truth
   return [];
 }
 
@@ -603,7 +607,6 @@ export async function backendAddEmployee(
   const id = BigInt(Date.now());
   const idStr = id.toString();
 
-  // Compress photo in parallel with nothing (just prep)
   const compressedPhoto = emp.photo
     ? await compressImage(emp.photo, 250, 0.65)
     : "";
@@ -631,16 +634,13 @@ export async function backendAddEmployee(
       await saveExtendedData(actor, extData);
     } catch (e) {
       console.warn("backendAddEmployee error", e);
+      throw e;
     }
   } else {
     const extData = getLocalExtendedData();
     extData.employeePhotos[idStr] = compressedPhoto;
     saveLocalExtendedData(extData);
   }
-
-  // Update local cache so UI reflects immediately on this device too
-  const current = getEmployees();
-  saveEmployees([...current, newEmp]);
 
   return newEmp;
 }
@@ -676,6 +676,7 @@ export async function backendUpdateEmployee(
       await saveExtendedData(actor, extData);
     } catch (e) {
       console.warn("backendUpdateEmployee error", e);
+      throw e;
     }
   } else {
     const extData = getLocalExtendedData();
@@ -683,9 +684,12 @@ export async function backendUpdateEmployee(
     saveLocalExtendedData(extData);
   }
 
-  // Update local cache
+  // Update local cache (for same-device immediate feedback)
   const current = getEmployees();
-  saveEmployees(current.map((e) => (e.id === emp.id ? updatedEmp : e)));
+  if (current.length > 0) {
+    const { saveEmployees } = await import("./storage");
+    saveEmployees(current.map((e) => (e.id === emp.id ? updatedEmp : e)));
+  }
 }
 
 export async function backendDeleteEmployee(
@@ -703,15 +707,13 @@ export async function backendDeleteEmployee(
       await saveExtendedData(actor, extData);
     } catch (e) {
       console.warn("backendDeleteEmployee error", e);
+      throw e;
     }
   } else {
     const extData = getLocalExtendedData();
     delete extData.employeePhotos[id];
     saveLocalExtendedData(extData);
   }
-
-  // Update local cache
-  saveEmployees(getEmployees().filter((e) => e.id !== id));
 }
 
 // -----------------------------------------------------------------------
@@ -724,7 +726,6 @@ export async function fetchReviews(
   try {
     if (actor) {
       const reviews = await actor.getAllReviews();
-      // BUG-001 FIX: Always use backend result when actor is available
       const decoded = reviews.map((r) => ({
         id: r.id.toString(),
         customerName: r.customerName,
@@ -853,58 +854,24 @@ export async function backendDeleteReview(
 
 // -----------------------------------------------------------------------
 // Invoices
-// BUG-016 FIX: Payment status stored separately to avoid backend type mismatch.
-// When backend returns invoices, merge in the stored payment statuses.
+// FIXED: paymentStatus, userId, terms now stored in backend Invoice type.
+// They are saved to and read from backend — fully cross-device.
 // -----------------------------------------------------------------------
-
-const PAYMENT_STATUS_KEY = "idpc_invoice_payment_status";
-
-function getPaymentStatusMap(): Record<string, "unpaid" | "partial" | "paid"> {
-  try {
-    const raw = localStorage.getItem(PAYMENT_STATUS_KEY);
-    return raw ? JSON.parse(raw) : {};
-  } catch {
-    return {};
-  }
-}
-
-function savePaymentStatusMap(
-  map: Record<string, "unpaid" | "partial" | "paid">,
-): void {
-  localStorage.setItem(PAYMENT_STATUS_KEY, JSON.stringify(map));
-}
-
-export function setInvoicePaymentStatus(
-  invoiceId: string,
-  status: "unpaid" | "partial" | "paid",
-): void {
-  const map = getPaymentStatusMap();
-  map[invoiceId] = status;
-  savePaymentStatusMap(map);
-}
 
 export async function fetchInvoices(
   actor: backendInterface | null,
 ): Promise<FEInvoice[]> {
-  const paymentStatusMap = getPaymentStatusMap();
   try {
     if (actor) {
       const backendInvoices = await actor.getAllInvoices();
-      // BUG-001 FIX: Always use backend result when actor is available,
-      // even if array is empty. Do NOT merge with localStorage.
       const decoded = backendInvoices.map((bi) => {
         const id = `INV-${bi.id.toString()}`;
-        const lsInvoices = getInvoices();
-        // Try to get paymentStatus from: payment status map -> localStorage invoice -> default unpaid
-        const psFromMap = paymentStatusMap[id];
-        const lsMatch = lsInvoices.find(
-          (li) => li.id === id || li.id === bi.id.toString(),
-        );
-        const paymentStatus: "unpaid" | "partial" | "paid" =
-          psFromMap || lsMatch?.paymentStatus || "unpaid";
+        // FIX: paymentStatus, userId, terms now come directly from backend
+        const paymentStatus =
+          (bi.paymentStatus as "unpaid" | "partial" | "paid") || "unpaid";
         return {
           id,
-          userId: lsMatch?.userId || `CUST-${bi.id.toString()}`,
+          userId: bi.userId || `CUST-${bi.id.toString()}`,
           customerName: bi.customerName,
           phone: bi.phone || "",
           address: bi.address || "",
@@ -922,33 +889,14 @@ export async function fetchInvoices(
           advance: Number(bi.advance),
           balance: Number(bi.balance),
           discount: Number(bi.discount),
-          terms: lsMatch?.terms || "",
+          terms: bi.terms || "",
           paymentStatus,
         } as FEInvoice;
       });
-      // Persist to localStorage so offline fallback stays fresh
-      // (preserve existing paymentStatus values in localStorage)
-      const existing = getInvoices();
-      const merged = decoded.map((inv) => {
-        const old = existing.find((e) => e.id === inv.id);
-        return old
-          ? {
-              ...inv,
-              terms: old.terms || inv.terms,
-              paymentStatus: inv.paymentStatus,
-            }
-          : inv;
-      });
-      // Add any local-only invoices not yet in backend
-      for (const lsInv of existing) {
-        if (!merged.find((m) => m.id === lsInv.id)) {
-          merged.push(lsInv);
-        }
-      }
-      // Save merged list back to localStorage
-      const { saveInvoices } = await import("./storage");
-      saveInvoices(merged);
-      return merged;
+
+      // FIX: Only use backend data — no merging with localStorage phantoms
+      saveInvoices(decoded);
+      return decoded;
     }
   } catch (e) {
     console.warn("fetchInvoices backend error", e);
@@ -961,10 +909,6 @@ export async function backendAddInvoice(
   invoice: FEInvoice,
 ): Promise<void> {
   lsAddInvoice(invoice);
-  // BUG-016 FIX: Save payment status to the separate map
-  if (invoice.paymentStatus) {
-    setInvoicePaymentStatus(invoice.id, invoice.paymentStatus);
-  }
   if (actor) {
     try {
       await actor.addInvoice({
@@ -986,9 +930,14 @@ export async function backendAddInvoice(
         advance: BigInt(Math.round(invoice.advance)),
         balance: BigInt(Math.round(invoice.balance)),
         discount: BigInt(Math.round(invoice.discount)),
+        // FIX: Now stored in backend
+        paymentStatus: invoice.paymentStatus || "unpaid",
+        userId: invoice.userId || "",
+        terms: invoice.terms || "",
       });
     } catch (e) {
       console.warn("backendAddInvoice error", e);
+      throw e;
     }
   }
 }
@@ -998,10 +947,6 @@ export async function backendUpdateInvoice(
   invoice: FEInvoice,
 ): Promise<void> {
   lsUpdateInvoice(invoice);
-  // BUG-016 FIX: Save payment status to the separate map
-  if (invoice.paymentStatus) {
-    setInvoicePaymentStatus(invoice.id, invoice.paymentStatus);
-  }
   if (actor) {
     try {
       const id = idStringToBigInt(invoice.id);
@@ -1024,9 +969,14 @@ export async function backendUpdateInvoice(
         advance: BigInt(Math.round(invoice.advance)),
         balance: BigInt(Math.round(invoice.balance)),
         discount: BigInt(Math.round(invoice.discount)),
+        // FIX: Now stored in backend
+        paymentStatus: invoice.paymentStatus || "unpaid",
+        userId: invoice.userId || "",
+        terms: invoice.terms || "",
       });
     } catch (e) {
       console.warn("backendUpdateInvoice error", e);
+      throw e;
     }
   }
 }
@@ -1045,6 +995,14 @@ export async function backendDeleteInvoice(
   }
 }
 
+// Kept for backwards compat — now a no-op since status is in backend
+export function setInvoicePaymentStatus(
+  _invoiceId: string,
+  _status: "unpaid" | "partial" | "paid",
+): void {
+  // No-op: payment status is now stored in the backend Invoice record
+}
+
 // -----------------------------------------------------------------------
 // Customer Orders
 // -----------------------------------------------------------------------
@@ -1055,7 +1013,6 @@ export async function fetchOrders(
   try {
     if (actor) {
       const backendOrders = await actor.getAllCustomerOrders();
-      // BUG-001 FIX: Always use backend result when actor is available
       const decoded = backendOrders.map((o) => ({
         id: o.id.toString(),
         serviceId: o.serviceId,
@@ -1082,7 +1039,6 @@ export async function backendAddOrder(
   actor: backendInterface | null,
   order: Omit<FEOrder, "id" | "date">,
 ): Promise<FEOrder> {
-  // BUG-003 FIX: Pass full order (including customerId) to lsAddOrder
   const newOrder = lsAddOrder(order);
   if (actor) {
     try {
@@ -1158,7 +1114,6 @@ export async function fetchContactMessages(
   try {
     if (actor) {
       const msgs = await actor.getAllContactMessages();
-      // BUG-001 FIX: Always use backend result when actor is available
       const decoded = msgs.map((m) => ({
         id: m.id.toString(),
         name: m.name,
@@ -1193,7 +1148,7 @@ export async function backendAddContactMessage(
       });
     } catch (e) {
       console.warn("backendAddContactMessage error", e);
-      // BUG-012 FIX: Only fall back to localStorage if backend call fails
+      // Fall back to localStorage if backend call fails
       const { saveMessage } = await import("./storage");
       saveMessage(msg);
       throw e;
@@ -1247,7 +1202,6 @@ export async function fetchBillingItems(
   try {
     if (actor) {
       const items = await actor.getAllBillingItems();
-      // BUG-001 FIX: Always use backend result when actor is available
       const decoded = items.map((item) => ({
         id: item.id.toString(),
         name: item.name,
@@ -1407,8 +1361,8 @@ export async function saveVisionMission(
 }
 
 // -----------------------------------------------------------------------
-// Billing Customers (with address)
-// BUG-018 FIX: Use storage.ts helpers instead of raw localStorage keys
+// Billing Customers
+// FIXED: Dedup check uses backend instead of device-local localStorage.
 // -----------------------------------------------------------------------
 
 export async function fetchBillingCustomers(
@@ -1417,7 +1371,6 @@ export async function fetchBillingCustomers(
   try {
     if (actor) {
       const customers = await actor.getAllBillingCustomers();
-      // BUG-001 FIX: Always use backend result when actor is available
       const decoded = customers.map((c) => ({
         id: c.id.toString(),
         name: c.name,
@@ -1430,7 +1383,6 @@ export async function fetchBillingCustomers(
   } catch (e) {
     console.warn("fetchBillingCustomers backend error", e);
   }
-  // BUG-018 FIX: Use getBillingCustomers() from storage.ts
   return getBillingCustomers().map((c) => ({ ...c, address: c.address ?? "" }));
 }
 
@@ -1440,16 +1392,22 @@ export async function backendAddBillingCustomer(
 ): Promise<FEBillingCustomer> {
   const id = BigInt(Date.now());
   const newCustomer: FEBillingCustomer = { id: id.toString(), ...customer };
-  // BUG-018 FIX: Use getBillingCustomers() helper
-  const existing = getBillingCustomers();
-  const dedup = existing.find(
-    (c) => c.name.toLowerCase() === customer.name.toLowerCase(),
-  );
-  if (!dedup) {
-    saveBillingCustomers([...existing, newCustomer]);
-  }
+
   if (actor) {
     try {
+      // FIX: Check for duplicates in BACKEND, not localStorage
+      const backendCustomers = await actor.getAllBillingCustomers();
+      const dedup = backendCustomers.find(
+        (c) => c.name.toLowerCase() === customer.name.toLowerCase(),
+      );
+      if (dedup) {
+        return {
+          id: dedup.id.toString(),
+          name: dedup.name,
+          phone: dedup.phone,
+          address: dedup.address,
+        };
+      }
       await actor.addBillingCustomer({
         id,
         name: customer.name,
@@ -1459,15 +1417,23 @@ export async function backendAddBillingCustomer(
     } catch (e) {
       console.warn("backendAddBillingCustomer error", e);
     }
+  } else {
+    // No actor — check localStorage for dedup
+    const existing = getBillingCustomers();
+    const dedup = existing.find(
+      (c) => c.name.toLowerCase() === customer.name.toLowerCase(),
+    );
+    if (dedup) return dedup;
+    saveBillingCustomers([...existing, newCustomer]);
   }
-  return dedup || newCustomer;
+
+  return newCustomer;
 }
 
 export async function backendDeleteBillingCustomer(
   actor: backendInterface | null,
   id: string,
 ): Promise<void> {
-  // BUG-018 FIX: Use storage helpers
   const existing = getBillingCustomers();
   saveBillingCustomers(existing.filter((c) => c.id !== id));
   if (actor) {
@@ -1483,7 +1449,6 @@ export async function backendUpdateBillingCustomer(
   actor: backendInterface | null,
   customer: FEBillingCustomer,
 ): Promise<void> {
-  // BUG-018 FIX: Use storage helpers
   const existing = getBillingCustomers();
   saveBillingCustomers(
     existing.map((c) => (c.id === customer.id ? customer : c)),

@@ -7,7 +7,8 @@ import { useEffect } from "react";
 import { toast } from "sonner";
 
 export default function ProductsPage() {
-  const { data: products = [] } = useProducts();
+  // FIX: Destructure isLoading for proper empty vs loading state
+  const { data: products = [], isLoading } = useProducts();
   const { addToCart, totalItems } = useCart();
 
   useEffect(() => {
@@ -194,12 +195,24 @@ export default function ProductsPage() {
           })}
         </div>
 
-        {products.length === 0 && (
+        {/* FIX: Proper loading vs empty state */}
+        {isLoading && products.length === 0 && (
+          <div className="text-center py-16 text-muted-foreground">
+            <p className="text-lg animate-pulse">Loading services...</p>
+          </div>
+        )}
+
+        {!isLoading && products.length === 0 && (
           <div
             className="text-center py-16 text-muted-foreground"
             data-ocid="products.empty_state"
           >
-            <p className="text-lg">Loading services...</p>
+            <p className="text-lg font-semibold text-brand-blue mb-2">
+              No services added yet.
+            </p>
+            <p className="text-sm">
+              Admin can add services from the Admin Panel → Services tab.
+            </p>
           </div>
         )}
 

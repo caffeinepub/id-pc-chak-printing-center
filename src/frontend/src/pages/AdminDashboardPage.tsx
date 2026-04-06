@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useActor } from "@/hooks/useActor";
 import {
+  useAboutStats,
   useApprovedReviews,
   useBannerImage,
   useBillingCustomers,
@@ -181,7 +182,7 @@ export default function AdminDashboardPage() {
   const { data: billingItems = [] } = useBillingItems();
   const { data: pendingReviews = [] } = usePendingReviews();
   const { data: approvedReviews = [] } = useApprovedReviews();
-  const [_reviews, setReviews] = useState<Review[]>([]);
+  const [_reviews, _setReviews] = useState<Review[]>([]);
   // BUG-002 FIX: Use React Query hooks for employees & services (real-time sync across devices)
   const { data: employees = [] } = useEmployees();
   const { data: products = [] } = useProducts();
@@ -296,6 +297,7 @@ export default function AdminDashboardPage() {
   // Vision & Mission state
   const { data: visionMission = { vision: "", mission: "" } } =
     useVisionMission();
+  const { data: aboutStatsFromBackend } = useAboutStats();
   const [visionText, setVisionText] = useState("");
   const [missionText, setMissionText] = useState("");
 
@@ -308,11 +310,11 @@ export default function AdminDashboardPage() {
       navigate({ to: "/admin", replace: true });
       return;
     }
-    setReviews(getReviews());
+    // FIX: Removed dead _reviews localStorage init
     setBannerPreview(getBannerImage());
     setLogoPreview(getLogo());
-    setAboutYears(localStorage.getItem("idpc_years_experience") || "10+");
-    setAboutClients(localStorage.getItem("idpc_num_clients") || "1000+");
+    // FIX: aboutYears will be synced from backend via useEffect below
+    // FIX: aboutClients will be synced from backend via useEffect below
   }, [navigate]);
 
   // BUG-014 FIX: Sync vision/mission text unconditionally (allow clearing)
@@ -321,6 +323,13 @@ export default function AdminDashboardPage() {
     setMissionText(visionMission.mission ?? "");
   }, [visionMission.vision, visionMission.mission]);
 
+  // FIX: Sync aboutYears/aboutClients from backend hook (not localStorage)
+  useEffect(() => {
+    if (aboutStatsFromBackend) {
+      setAboutYears(aboutStatsFromBackend.yearsExperience);
+      setAboutClients(aboutStatsFromBackend.numClients);
+    }
+  }, [aboutStatsFromBackend]);
   // BUG-022 FIX: Sync banner/logo preview from backend hooks so they stay current
   const { data: bannerFromBackend } = useBannerImage();
   const { data: logoFromBackend } = useLogo();
@@ -554,15 +563,11 @@ export default function AdminDashboardPage() {
   async function handleAddReview(e: React.FormEvent) {
     e.preventDefault();
     if (!reviewForm.customerName.trim() || !reviewForm.review.trim()) return;
-    const newReview = await backendAddReview(actor, {
+    await backendAddReview(actor, {
       ...reviewForm,
       status: "approved",
     });
-    setReviews((prev) => {
-      const updated = [...prev, newReview];
-      saveReviews(updated);
-      return updated;
-    });
+    // FIX: Removed dead localStorage review state - React Query invalidation handles sync
     setReviewForm({ customerName: "", review: "", rating: 5 });
     invalidate(["reviews", "approvedReviews"]);
   }
@@ -580,11 +585,7 @@ export default function AdminDashboardPage() {
   async function handleDeleteReview(id: string) {
     if (window.confirm("Delete this review?")) {
       await backendDeleteReview(actor, id);
-      setReviews((prev) => {
-        const updated = prev.filter((r) => r.id !== id);
-        saveReviews(updated);
-        return updated;
-      });
+      // FIX: Removed dead localStorage review state - React Query invalidation handles sync
       invalidate(["reviews", "approvedReviews", "pendingReviews"]);
     }
   }

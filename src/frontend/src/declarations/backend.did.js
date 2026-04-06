@@ -85,6 +85,9 @@ export const Invoice = IDL.Record({
   'phone' : IDL.Text,
   'items' : IDL.Vec(InvoiceItem),
   'advance' : IDL.Nat,
+  'paymentStatus' : IDL.Text,
+  'userId' : IDL.Text,
+  'terms' : IDL.Text,
 });
 export const Product = IDL.Record({
   'id' : IDL.Nat,
@@ -323,6 +326,9 @@ export const idlFactory = ({ IDL }) => {
     'phone' : IDL.Text,
     'items' : IDL.Vec(InvoiceItem),
     'advance' : IDL.Nat,
+    'paymentStatus' : IDL.Text,
+    'userId' : IDL.Text,
+    'terms' : IDL.Text,
   });
   const Product = IDL.Record({
     'id' : IDL.Nat,

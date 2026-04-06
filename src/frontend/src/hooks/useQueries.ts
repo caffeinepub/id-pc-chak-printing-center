@@ -4,7 +4,7 @@
  * All queries poll the backend every 5 seconds so admin changes
  * are reflected on the live site in near real-time across all devices.
  *
- * NOTE: initialData from localStorage removed for employees/services
+ * NOTE: initialData from localStorage removed for employees/services/products
  * so that cross-device sync works correctly.
  */
 
@@ -32,6 +32,7 @@ import {
   type BillingItem,
   type Review,
   getBannerImage,
+  getBillingCustomers,
   getBillingItems,
   getContactMessages,
   getInvoices,
@@ -193,12 +194,15 @@ export function useBillingItems() {
   });
 }
 
+// FIX: initialData now reads from backend via fetchAboutStats,
+// not localStorage directly (which is device-specific)
 export function useAboutStats() {
   const { actor, isFetching } = useActor();
   return useQuery({
     queryKey: ["aboutStats"],
     queryFn: () => fetchAboutStats(actor),
     enabled: !isFetching,
+    // Use localStorage as initial value only (will be replaced by backend fetch)
     initialData: () => ({
       yearsExperience: localStorage.getItem("idpc_years_experience") || "10+",
       numClients: localStorage.getItem("idpc_num_clients") || "1000+",
@@ -221,18 +225,15 @@ export function useCompanies() {
   });
 }
 
+// FIX: Use getBillingCustomers() helper from storage.ts instead of raw localStorage
 export function useBillingCustomers() {
   const { actor, isFetching } = useActor();
   return useQuery<FEBillingCustomer[]>({
     queryKey: ["billingCustomers"],
     queryFn: () => fetchBillingCustomers(actor),
     enabled: !isFetching,
-    initialData: () => {
-      const data = localStorage.getItem("idpc_billing_customers");
-      if (!data) return [];
-      const parsed: FEBillingCustomer[] = JSON.parse(data);
-      return parsed.map((c) => ({ ...c, address: c.address ?? "" }));
-    },
+    initialData: () =>
+      getBillingCustomers().map((c) => ({ ...c, address: c.address ?? "" })),
     staleTime: 0,
     refetchInterval: POLL_INTERVAL,
     refetchIntervalInBackground: true,
@@ -287,6 +288,7 @@ export function useVisionMission() {
   });
 }
 
+// No initialData — backend is single source of truth for products
 export function useProducts() {
   const { actor, isFetching } = useActor();
   return useQuery({

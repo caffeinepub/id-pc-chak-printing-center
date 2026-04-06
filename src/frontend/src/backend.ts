@@ -153,6 +153,9 @@ export interface Invoice {
     phone: string;
     items: Array<InvoiceItem>;
     advance: bigint;
+    paymentStatus: string;
+    userId: string;
+    terms: string;
 }
 export interface BillingCustomer {
     id: bigint;

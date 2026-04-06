@@ -4,14 +4,15 @@ import {
   useApprovedReviews,
   useCompanies,
   useEmployees,
-  useServices,
+  useProducts,
 } from "@/hooks/useQueries";
 import { Building2, CheckCircle2, Star, Users } from "lucide-react";
 import { useEffect } from "react";
 
 export default function AboutPage() {
   const { data: employees = [] } = useEmployees();
-  const { data: services = [] } = useServices();
+  // FIX: Use useProducts instead of useServices — services were migrated to products
+  const { data: products = [] } = useProducts();
   const { data: aboutStats = { yearsExperience: "10+", numClients: "1000+" } } =
     useAboutStats();
   const { data: approvedReviews = [] } = useApprovedReviews();
@@ -46,7 +47,7 @@ export default function AboutPage() {
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-6 text-center">
             <div className="bg-background rounded-2xl p-6 shadow-card border-2 border-brand-blue-mid card-3d">
               <p className="font-heading font-bold text-4xl text-brand-blue">
-                {services.length}+
+                {products.length > 0 ? `${products.length}+` : "15+"}
               </p>
               <p className="text-muted-foreground text-sm mt-1">Services</p>
             </div>
@@ -121,32 +122,47 @@ export default function AboutPage() {
         </div>
       </section>
 
-      {/* Services List */}
-      <section className="py-16 bg-muted/50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-10">
-            <p className="text-brand-gold font-semibold text-sm uppercase tracking-widest mb-2">
-              What We Do
-            </p>
-            <h2 className="font-heading font-bold text-3xl text-brand-blue">
-              Our Services
-            </h2>
+      {/* Services List — now uses products */}
+      {products.length > 0 && (
+        <section className="py-16 bg-muted/50">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="text-center mb-10">
+              <p className="text-brand-gold font-semibold text-sm uppercase tracking-widest mb-2">
+                What We Do
+              </p>
+              <h2 className="font-heading font-bold text-3xl text-brand-blue">
+                Our Services
+              </h2>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+              {products.map((product) => (
+                <div
+                  key={product.id}
+                  className="bg-background rounded-xl p-4 text-center shadow-card border border-border hover:border-brand-blue-mid transition-colors card-3d"
+                >
+                  {product.image ? (
+                    <img
+                      src={product.image}
+                      alt={product.name}
+                      className="w-12 h-12 object-cover rounded-lg mx-auto mb-2"
+                    />
+                  ) : (
+                    <div className="text-3xl mb-2">🖨️</div>
+                  )}
+                  <p className="font-semibold text-brand-blue text-sm">
+                    {product.name}
+                  </p>
+                  {product.price && (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {product.price}
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-            {services.map((svc) => (
-              <div
-                key={svc.id}
-                className="bg-background rounded-xl p-4 text-center shadow-card border border-border hover:border-brand-blue-mid transition-colors card-3d"
-              >
-                <div className="text-3xl mb-2">{svc.icon}</div>
-                <p className="font-semibold text-brand-blue text-sm">
-                  {svc.name}
-                </p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
+        </section>
+      )}
 
       {/* Work With Companies */}
       {companies.length > 0 && (

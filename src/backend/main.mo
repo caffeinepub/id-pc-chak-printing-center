@@ -62,6 +62,21 @@ actor {
     date : Text;
   };
 
+  // Old Invoice type (without paymentStatus/userId/terms) — kept for stable migration
+  type InvoiceV1 = {
+    id : Nat;
+    customerName : Text;
+    phone : Text;
+    address : Text;
+    date : Text;
+    grandTotal : Nat;
+    advance : Nat;
+    balance : Nat;
+    discount : Nat;
+    items : [InvoiceItem];
+  };
+
+  // New Invoice type with extra fields
   type Invoice = {
     id : Nat;
     customerName : Text;
@@ -73,6 +88,9 @@ actor {
     balance : Nat;
     discount : Nat;
     items : [InvoiceItem];
+    paymentStatus : Text;
+    userId : Text;
+    terms : Text;
   };
 
   type CustomerOrder = {
@@ -149,7 +167,14 @@ actor {
   let services = Map.empty<Nat, Service>();
   let employees = Map.empty<Nat, Employee>();
   let reviews = Map.empty<Nat, Review>();
-  let invoices = Map.empty<Nat, Invoice>();
+
+  // MIGRATION: Keep old invoice map as InvoiceV1 so stable variable is compatible.
+  // New invoices are stored in invoicesV2. On first run, invoicesV2 is populated
+  // from invoices (the V1 map) with default values for new fields.
+  let invoices = Map.empty<Nat, InvoiceV1>();
+  let invoicesV2 = Map.empty<Nat, Invoice>();
+  var invoicesMigrated : Bool = false;
+
   let customerOrders = Map.empty<Nat, CustomerOrder>();
   let contactMessages = Map.empty<Nat, ContactMessage>();
   let billingItems = Map.empty<Nat, BillingItem>();
@@ -165,13 +190,41 @@ actor {
 
   include MixinStorage();
 
+  // ===== INVOICE V1 -> V2 MIGRATION =====
+  // Runs automatically on first call, migrates old invoices into invoicesV2
+
+  func ensureInvoicesMigrated() {
+    if (invoicesMigrated) return;
+    invoicesMigrated := true;
+    // Copy every V1 invoice into V2 with default values for new fields
+    for ((k, v) in invoices.toArray().vals()) {
+      if (not invoicesV2.containsKey(k)) {
+        invoicesV2.add(k, {
+          id = v.id;
+          customerName = v.customerName;
+          phone = v.phone;
+          address = v.address;
+          date = v.date;
+          grandTotal = v.grandTotal;
+          advance = v.advance;
+          balance = v.balance;
+          discount = v.discount;
+          items = v.items;
+          paymentStatus = "unpaid";
+          userId = "";
+          terms = "";
+        });
+      };
+    };
+  };
+
   // ===== NEW PRODUCT CRUD =====
 
-  public query ({ caller }) func getAllProducts() : async [Product] {
+  public query func getAllProducts() : async [Product] {
     products.values().toArray();
   };
 
-  public query ({ caller }) func getProductsCount() : async Nat {
+  public query func getProductsCount() : async Nat {
     products.size();
   };
 
@@ -195,7 +248,7 @@ actor {
 
   // ===== MIGRATION TRACKING =====
 
-  public query ({ caller }) func getMigrationDone() : async Bool {
+  public query func getMigrationDone() : async Bool {
     migrationDone;
   };
 
@@ -205,14 +258,14 @@ actor {
 
   // ===== LOGO & PASSWORD =====
 
-  public shared ({ caller }) func getLogo() : async Text {
+  public query func getLogo() : async Text {
     logo;
   };
   public shared ({ caller }) func setLogo(v : Text) : async () {
     logo := v;
   };
 
-  public shared ({ caller }) func getAdminPassword() : async Text {
+  public query func getAdminPassword() : async Text {
     adminPassword;
   };
 
@@ -222,14 +275,14 @@ actor {
 
   // ===== BANNER & COMPANIES =====
 
-  public shared ({ caller }) func getBannerImage() : async Text {
+  public query func getBannerImage() : async Text {
     bannerImage;
   };
   public shared ({ caller }) func setBannerImage(v : Text) : async () {
     bannerImage := v;
   };
 
-  public shared ({ caller }) func getCompaniesJson() : async Text {
+  public query func getCompaniesJson() : async Text {
     companiesJson;
   };
   public shared ({ caller }) func setCompaniesJson(v : Text) : async () {
@@ -238,7 +291,7 @@ actor {
 
   // ===== EMPLOYEES JSON (with full photo data) =====
 
-  public shared ({ caller }) func getEmployeesJson() : async Text {
+  public query func getEmployeesJson() : async Text {
     employeesJson;
   };
   public shared ({ caller }) func setEmployeesJson(v : Text) : async () {
@@ -247,7 +300,7 @@ actor {
 
   // ===== SERVICES JSON (with full image data) =====
 
-  public shared ({ caller }) func getServicesJson() : async Text {
+  public query func getServicesJson() : async Text {
     servicesJson;
   };
   public shared ({ caller }) func setServicesJson(v : Text) : async () {
@@ -256,11 +309,11 @@ actor {
 
   // ===== SERVICES CRUD =====
 
-  public shared ({ caller }) func getAllServices() : async [Service] {
+  public query func getAllServices() : async [Service] {
     services.values().toArray();
   };
 
-  public shared ({ caller }) func getService(id : Nat) : async ?Service {
+  public query func getService(id : Nat) : async ?Service {
     services.get(id);
   };
 
@@ -284,11 +337,11 @@ actor {
 
   // ===== EMPLOYEES CRUD =====
 
-  public shared ({ caller }) func getAllEmployees() : async [Employee] {
+  public query func getAllEmployees() : async [Employee] {
     employees.values().toArray();
   };
 
-  public shared ({ caller }) func getEmployee(id : Nat) : async ?Employee {
+  public query func getEmployee(id : Nat) : async ?Employee {
     employees.get(id);
   };
 
@@ -312,11 +365,11 @@ actor {
 
   // ===== REVIEWS CRUD =====
 
-  public shared ({ caller }) func getAllReviews() : async [Review] {
+  public query func getAllReviews() : async [Review] {
     reviews.values().toArray();
   };
 
-  public shared ({ caller }) func getReview(id : Nat) : async ?Review {
+  public query func getReview(id : Nat) : async ?Review {
     reviews.get(id);
   };
 
@@ -338,55 +391,61 @@ actor {
     } else { false };
   };
 
-  public shared ({ caller }) func getApprovedReviews() : async [Review] {
+  public query func getApprovedReviews() : async [Review] {
     reviews.values().toArray().filter(func(r) { r.status == "approved" });
   };
 
-  public shared ({ caller }) func getPendingReviews() : async [Review] {
+  public query func getPendingReviews() : async [Review] {
     reviews.values().toArray().filter(func(r) { r.status == "pending" });
   };
 
-  // ===== INVOICES CRUD =====
+  // ===== INVOICES CRUD (uses invoicesV2 for new Invoice type) =====
 
   public shared ({ caller }) func getAllInvoices() : async [Invoice] {
-    invoices.values().toArray();
+    ensureInvoicesMigrated();
+    invoicesV2.values().toArray();
   };
 
   public shared ({ caller }) func getInvoice(id : Nat) : async ?Invoice {
-    invoices.get(id);
+    ensureInvoicesMigrated();
+    invoicesV2.get(id);
   };
 
   public shared ({ caller }) func addInvoice(inv : Invoice) : async () {
-    invoices.add(inv.id, inv);
+    ensureInvoicesMigrated();
+    invoicesV2.add(inv.id, inv);
   };
 
   public shared ({ caller }) func updateInvoice(id : Nat, inv : Invoice) : async Bool {
-    if (invoices.containsKey(id)) {
-      invoices.add(id, inv);
+    ensureInvoicesMigrated();
+    if (invoicesV2.containsKey(id)) {
+      invoicesV2.add(id, inv);
       true;
     } else { false };
   };
 
   public shared ({ caller }) func deleteInvoice(id : Nat) : async Bool {
-    if (invoices.containsKey(id)) {
-      invoices.remove(id);
+    ensureInvoicesMigrated();
+    if (invoicesV2.containsKey(id)) {
+      invoicesV2.remove(id);
       true;
     } else { false };
   };
 
   public shared ({ caller }) func getInvoicesByCustomerPhone(phone : Text) : async [Invoice] {
-    let matchingInvoices = invoices.toArray().filter(func((_, invoice)) { invoice.phone == phone });
+    ensureInvoicesMigrated();
+    let matchingInvoices = invoicesV2.toArray().filter(func((_, invoice)) { invoice.phone == phone });
     let invoiceArray = matchingInvoices.map(func((_, invoice)) { invoice });
     invoiceArray;
   };
 
   // ===== CUSTOMER ORDERS CRUD =====
 
-  public shared ({ caller }) func getAllCustomerOrders() : async [CustomerOrder] {
+  public query func getAllCustomerOrders() : async [CustomerOrder] {
     customerOrders.values().toArray();
   };
 
-  public shared ({ caller }) func getCustomerOrder(id : Nat) : async ?CustomerOrder {
+  public query func getCustomerOrder(id : Nat) : async ?CustomerOrder {
     customerOrders.get(id);
   };
 
@@ -408,7 +467,7 @@ actor {
     } else { false };
   };
 
-  public shared ({ caller }) func getOrdersByCustomer(customerId : Nat) : async [CustomerOrder] {
+  public query func getOrdersByCustomer(customerId : Nat) : async [CustomerOrder] {
     customerOrders.values().toArray().filter(
       func(order) {
         switch (order.customerId) {
@@ -421,11 +480,11 @@ actor {
 
   // ===== CONTACT MESSAGES CRUD =====
 
-  public shared ({ caller }) func getAllContactMessages() : async [ContactMessage] {
+  public query func getAllContactMessages() : async [ContactMessage] {
     contactMessages.values().toArray();
   };
 
-  public shared ({ caller }) func getContactMessage(id : Nat) : async ?ContactMessage {
+  public query func getContactMessage(id : Nat) : async ?ContactMessage {
     contactMessages.get(id);
   };
 
@@ -453,11 +512,11 @@ actor {
 
   // ===== BILLING ITEMS CRUD =====
 
-  public shared ({ caller }) func getAllBillingItems() : async [BillingItem] {
+  public query func getAllBillingItems() : async [BillingItem] {
     billingItems.values().toArray();
   };
 
-  public shared ({ caller }) func getBillingItem(id : Nat) : async ?BillingItem {
+  public query func getBillingItem(id : Nat) : async ?BillingItem {
     billingItems.get(id);
   };
 
@@ -481,11 +540,11 @@ actor {
 
   // ===== BILLING CUSTOMERS CRUD =====
 
-  public shared ({ caller }) func getAllBillingCustomers() : async [BillingCustomer] {
+  public query func getAllBillingCustomers() : async [BillingCustomer] {
     billingCustomers.values().toArray();
   };
 
-  public shared ({ caller }) func getBillingCustomer(id : Nat) : async ?BillingCustomer {
+  public query func getBillingCustomer(id : Nat) : async ?BillingCustomer {
     billingCustomers.get(id);
   };
 
@@ -509,7 +568,7 @@ actor {
 
   // ===== ABOUT STATS CRUD =====
 
-  public shared ({ caller }) func getAboutStats() : async ?AboutStats {
+  public query func getAboutStats() : async ?AboutStats {
     aboutStats;
   };
 
@@ -536,11 +595,11 @@ actor {
     } else { false };
   };
 
-  public shared ({ caller }) func getCustomerById(id : Nat) : async ?CustomerAccount {
+  public query func getCustomerById(id : Nat) : async ?CustomerAccount {
     customers.get(id);
   };
 
-  public shared ({ caller }) func getCustomerByEmail(email : Text) : async ?CustomerAccount {
+  public query func getCustomerByEmail(email : Text) : async ?CustomerAccount {
     let customer = customers.toArray().find(
       func((_, account)) { account.email == email }
     );
@@ -550,7 +609,7 @@ actor {
     };
   };
 
-  public shared ({ caller }) func getAllCustomers() : async [CustomerAccount] {
+  public query func getAllCustomers() : async [CustomerAccount] {
     customers.values().toArray();
   };
 
@@ -582,7 +641,7 @@ actor {
     securityAnswers := s;
   };
 
-  public shared ({ caller }) func getSecurityAnswers() : async SecurityAnswers {
+  public query func getSecurityAnswers() : async SecurityAnswers {
     securityAnswers;
   };
 };

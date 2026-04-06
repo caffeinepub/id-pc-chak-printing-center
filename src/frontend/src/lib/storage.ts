@@ -54,6 +54,7 @@ export interface CustomerOrder {
   totalPrice: number;
   date: string;
   status: string; // "pending", "confirmed", "completed"
+  customerId?: string;
 }
 
 export interface Review {

@@ -148,36 +148,127 @@ function saveLocalExtendedData(data: ExtendedData): void {
   localStorage.setItem("idpc_companies", JSON.stringify(data.companies));
 }
 
+// Cache to avoid re-fetching extended data within the same call chain
+let _extDataCache: ExtendedData | null = null;
+let _extDataCacheTime = 0;
+const EXT_DATA_CACHE_MS = 500;
+
 async function fetchExtendedData(
   actor: backendInterface | null,
 ): Promise<ExtendedData> {
+  // Return cache if fresh enough
+  if (_extDataCache && Date.now() - _extDataCacheTime < EXT_DATA_CACHE_MS) {
+    return _extDataCache;
+  }
   try {
     if (actor) {
-      const json = await actor.getCompaniesJson();
-      if (json?.trim()) {
-        const data = parseExtendedData(json);
-        saveLocalExtendedData(data);
-        return data;
-      }
+      // Fetch all 3 chunks in parallel
+      const [companiesChunk, employeesChunk, servicesChunk] = await Promise.all(
+        [
+          actor.getCompaniesJson().catch(() => ""),
+          actor.getEmployeesJson().catch(() => ""),
+          actor.getServicesJson().catch(() => ""),
+        ],
+      );
+
+      const companiesData = companiesChunk?.trim()
+        ? safeParseJson(companiesChunk)
+        : {};
+      const employeesData = employeesChunk?.trim()
+        ? safeParseJson(employeesChunk)
+        : {};
+      const servicesData = servicesChunk?.trim()
+        ? safeParseJson(servicesChunk)
+        : {};
+
+      // Merge legacy format: if companiesChunk is a full ExtendedData blob, handle it
+      const legacyCompanies = Array.isArray(companiesData)
+        ? (companiesData as Company[])
+        : (companiesData.companies as Company[]) || [];
+      const legacyServiceImages =
+        (companiesData.serviceImages as Record<string, string>) ||
+        (servicesData.serviceImages as Record<string, string>) ||
+        ({} as Record<string, string>);
+
+      const merged: ExtendedData = {
+        companies: legacyCompanies,
+        employeePhotos:
+          (employeesData.employeePhotos as Record<string, string>) ||
+          (companiesData.employeePhotos as Record<string, string>) ||
+          ({} as Record<string, string>),
+        serviceImages: legacyServiceImages,
+        gallery:
+          (servicesData.gallery as string[]) ||
+          (companiesData.gallery as string[]) ||
+          [],
+        vision:
+          (servicesData.vision as string) ||
+          (companiesData.vision as string) ||
+          "",
+        mission:
+          (servicesData.mission as string) ||
+          (companiesData.mission as string) ||
+          "",
+      };
+
+      saveLocalExtendedData(merged);
+      _extDataCache = merged;
+      _extDataCacheTime = Date.now();
+      return merged;
     }
   } catch (e) {
     console.warn("fetchExtendedData backend error", e);
   }
-  return getLocalExtendedData();
+  const local = getLocalExtendedData();
+  _extDataCache = local;
+  _extDataCacheTime = Date.now();
+  return local;
+}
+
+function safeParseJson(json: string): Record<string, unknown> {
+  try {
+    return JSON.parse(json) as Record<string, unknown>;
+  } catch {
+    return {};
+  }
 }
 
 async function saveExtendedData(
   actor: backendInterface | null,
   data: ExtendedData,
 ): Promise<void> {
+  // Invalidate cache on save
+  _extDataCache = data;
+  _extDataCacheTime = Date.now();
   saveLocalExtendedData(data);
+
   if (actor) {
-    try {
-      const json = JSON.stringify(data);
-      await actor.setCompaniesJson(json);
-    } catch (e) {
-      console.warn("saveExtendedData backend error", e);
-    }
+    // Split into 3 smaller chunks to avoid ICP 2MB message limit
+    const companiesChunk = JSON.stringify({
+      companies: data.companies,
+      serviceImages: data.serviceImages,
+    });
+    const employeesChunk = JSON.stringify({
+      employeePhotos: data.employeePhotos,
+    });
+    const servicesChunk = JSON.stringify({
+      gallery: data.gallery,
+      vision: data.vision,
+      mission: data.mission,
+    });
+
+    // Save all 3 in parallel, each is much smaller than the combined blob
+    await Promise.all([
+      actor.setCompaniesJson(companiesChunk).catch((e: unknown) => {
+        console.warn("saveExtendedData companiesJson error", e);
+      }),
+      actor.setEmployeesJson(employeesChunk).catch((e: unknown) => {
+        console.warn("saveExtendedData employeesJson error", e);
+      }),
+      actor.setServicesJson(servicesChunk).catch((e: unknown) => {
+        console.warn("saveExtendedData servicesJson error", e);
+      }),
+    ]);
   }
 }
 
@@ -905,6 +996,8 @@ export async function fetchOrders(
           totalPrice: Number(o.totalPrice),
           date: o.date,
           status: o.status || "pending",
+          customerId:
+            o.customerId != null ? o.customerId.toString() : undefined,
         })) as FEOrder[];
         saveOrders(decoded);
         return decoded;
@@ -934,6 +1027,9 @@ export async function backendAddOrder(
         totalPrice: BigInt(Math.round(newOrder.totalPrice)),
         date: newOrder.date,
         status: newOrder.status,
+        customerId: newOrder.customerId
+          ? BigInt(newOrder.customerId)
+          : undefined,
       });
     } catch (e) {
       console.warn("backendAddOrder error", e);
@@ -974,6 +1070,7 @@ export async function backendUpdateOrder(
         totalPrice: BigInt(Math.round(order.totalPrice)),
         date: order.date,
         status: order.status,
+        customerId: order.customerId ? BigInt(order.customerId) : undefined,
       });
     } catch (e) {
       console.warn("backendUpdateOrder error", e);
@@ -1412,10 +1509,25 @@ export async function fetchCustomers(
 export async function fetchCustomerOrders(
   actor: backendInterface | null,
   customerId: bigint,
+  phone?: string,
 ): Promise<CustomerOrder[]> {
   try {
     if (actor) {
-      return await actor.getOrdersByCustomer(customerId);
+      // Get orders by customerId
+      const byId = await actor.getOrdersByCustomer(customerId).catch(() => []);
+      // Also get all orders and filter by phone as fallback (for old orders without customerId)
+      if (phone) {
+        const allOrders = await actor.getAllCustomerOrders().catch(() => []);
+        const byPhone = allOrders.filter((o) => o.phone === phone);
+        // Merge: byId + any byPhone not already in byId
+        const idSet = new Set(byId.map((o) => o.id.toString()));
+        const merged = [
+          ...byId,
+          ...byPhone.filter((o) => !idSet.has(o.id.toString())),
+        ];
+        return merged;
+      }
+      return byId;
     }
   } catch (e) {
     console.warn("fetchCustomerOrders backend error", e);

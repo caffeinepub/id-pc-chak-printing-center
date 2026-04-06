@@ -60,7 +60,7 @@ export default function CustomerDashboardPage() {
       setLoading(true);
       try {
         const [ordersData, invoicesData] = await Promise.all([
-          fetchCustomerOrders(actor, BigInt(session.id)),
+          fetchCustomerOrders(actor, BigInt(session.id), session.phone),
           fetchCustomerInvoices(actor, session.phone),
         ]);
         if (!cancelled) {

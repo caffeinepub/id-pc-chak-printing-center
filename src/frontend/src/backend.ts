@@ -245,6 +245,8 @@ export interface backendInterface {
     getBillingCustomer(id: bigint): Promise<BillingCustomer | null>;
     getBillingItem(id: bigint): Promise<BillingItem | null>;
     getCompaniesJson(): Promise<string>;
+    getServicesJson(): Promise<string>;
+    getEmployeesJson(): Promise<string>;
     getContactMessage(id: bigint): Promise<ContactMessage | null>;
     getCustomerByEmail(email: string): Promise<CustomerAccount | null>;
     getCustomerById(id: bigint): Promise<CustomerAccount>;
@@ -264,6 +266,8 @@ export interface backendInterface {
     setAdminPassword(v: string): Promise<void>;
     setBannerImage(v: string): Promise<void>;
     setCompaniesJson(v: string): Promise<void>;
+    setServicesJson(v: string): Promise<void>;
+    setEmployeesJson(v: string): Promise<void>;
     setLogo(v: string): Promise<void>;
     setSecurityAnswers(s: SecurityAnswers): Promise<void>;
     updateBillingCustomer(id: bigint, customer: BillingCustomer): Promise<boolean>;
@@ -825,6 +829,34 @@ export class Backend implements backendInterface {
             return result;
         }
     }
+    async getServicesJson(): Promise<string> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.getServicesJson();
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.getServicesJson();
+            return result;
+        }
+    }
+    async getEmployeesJson(): Promise<string> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.getEmployeesJson();
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.getEmployeesJson();
+            return result;
+        }
+    }
     async getContactMessage(arg0: bigint): Promise<ContactMessage | null> {
         if (this.processError) {
             try {
@@ -1088,6 +1120,34 @@ export class Backend implements backendInterface {
             }
         } else {
             const result = await this.actor.setCompaniesJson(arg0);
+            return result;
+        }
+    }
+    async setServicesJson(arg0: string): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.setServicesJson(arg0);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.setServicesJson(arg0);
+            return result;
+        }
+    }
+    async setEmployeesJson(arg0: string): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.setEmployeesJson(arg0);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.setEmployeesJson(arg0);
             return result;
         }
     }

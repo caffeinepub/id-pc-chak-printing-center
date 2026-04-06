@@ -1,7 +1,7 @@
 import { Badge } from "@/components/ui/badge";
 import { useServices } from "@/hooks/useQueries";
 import { Link } from "@tanstack/react-router";
-import { ArrowRight, PackageX, Tag } from "lucide-react";
+import { ArrowRight, PackageX, ShoppingCart, Tag } from "lucide-react";
 import { useEffect } from "react";
 
 export default function ProductsPage() {
@@ -144,6 +144,19 @@ export default function ProductsPage() {
                         View Details <ArrowRight className="w-4 h-4" />
                       </span>
                     </div>
+                    {isInStock && (
+                      <button
+                        type="button"
+                        className="mt-3 w-full flex items-center justify-center gap-2 bg-brand-blue text-white font-semibold text-sm py-2 rounded-xl shadow hover:bg-brand-blue/90 active:scale-95 transition-all btn-3d btn-3d-blue"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          window.location.href = `/products/${svc.id}`;
+                        }}
+                      >
+                        <ShoppingCart className="w-4 h-4" />
+                        Add to Cart
+                      </button>
+                    )}
                   </div>
                 </div>
               </Link>

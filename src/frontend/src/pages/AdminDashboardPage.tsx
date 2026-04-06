@@ -742,7 +742,7 @@ export default function AdminDashboardPage() {
 
   async function handleSaveLogo() {
     if (!logoPreview) return;
-    const compressed = await compressImage(logoPreview, 400, 0.8);
+    const compressed = await compressImage(logoPreview, 300, 0.75);
     await saveLogo(actor, compressed);
     setLogoPreview(compressed);
     invalidate(["logo"]);
@@ -759,7 +759,7 @@ export default function AdminDashboardPage() {
 
   async function handleSaveBanner() {
     if (!bannerPreview) return;
-    const compressed = await compressImage(bannerPreview, 800, 0.7);
+    const compressed = await compressImage(bannerPreview, 500, 0.65);
     await saveBannerImage(actor, compressed);
     setBannerPreview(compressed);
     invalidate(["bannerImage"]);
@@ -3801,7 +3801,11 @@ export default function AdminDashboardPage() {
                           res(ev.target?.result as string);
                         reader.readAsDataURL(file);
                       });
-                      const compressed = await compressImage(dataUrl, 600, 0.7);
+                      const compressed = await compressImage(
+                        dataUrl,
+                        400,
+                        0.55,
+                      );
                       newImages.push(compressed);
                     }
                     const updated = [...gallery, ...newImages];

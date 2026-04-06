@@ -153,6 +153,8 @@ export interface backendInterface {
     getBillingCustomer(id: bigint): Promise<BillingCustomer | null>;
     getBillingItem(id: bigint): Promise<BillingItem | null>;
     getCompaniesJson(): Promise<string>;
+    getServicesJson(): Promise<string>;
+    getEmployeesJson(): Promise<string>;
     getContactMessage(id: bigint): Promise<ContactMessage | null>;
     getCustomerByEmail(email: string): Promise<CustomerAccount | null>;
     getCustomerById(id: bigint): Promise<CustomerAccount>;
@@ -172,6 +174,8 @@ export interface backendInterface {
     setAdminPassword(v: string): Promise<void>;
     setBannerImage(v: string): Promise<void>;
     setCompaniesJson(v: string): Promise<void>;
+    setServicesJson(v: string): Promise<void>;
+    setEmployeesJson(v: string): Promise<void>;
     setLogo(v: string): Promise<void>;
     setSecurityAnswers(s: SecurityAnswers): Promise<void>;
     updateBillingCustomer(id: bigint, customer: BillingCustomer): Promise<boolean>;

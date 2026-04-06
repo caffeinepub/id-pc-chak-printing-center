@@ -85,6 +85,7 @@ export default function PurchasePage() {
     if (!svc) return;
     setSubmitting(true);
     try {
+      const session = customerSession ? JSON.parse(customerSession) : null;
       const orderData = {
         serviceId: svc.id,
         serviceName: svc.name,
@@ -94,6 +95,7 @@ export default function PurchasePage() {
         notes: notes,
         totalPrice: total ?? 0,
         status: "pending",
+        customerId: session?.id ? String(session.id) : undefined,
       };
       await backendAddOrder(actor, orderData);
       invalidate(["orders"]);

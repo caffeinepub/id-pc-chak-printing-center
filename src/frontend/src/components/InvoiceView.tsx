@@ -13,9 +13,8 @@ function computeSubtotal(invoice: Invoice): number {
 }
 
 function computeDiscount(invoice: Invoice): number {
-  // discount is stored in terms-field workaround: we derive it from grandTotal vs subtotal
-  const subtotal = computeSubtotal(invoice);
-  return subtotal - invoice.grandTotal;
+  // BUG-004 FIX: Use the stored discount field directly instead of computing from grandTotal
+  return Math.max(0, Number(invoice.discount ?? 0));
 }
 
 export default function InvoiceView({ invoice, onClose }: Props) {

@@ -9,7 +9,6 @@ import { AlertCircle, Info, Search } from "lucide-react";
 import { useEffect, useState } from "react";
 
 export default function BillCheckPage() {
-  const [userId, setUserId] = useState("");
   const [billNo, setBillNo] = useState("");
   const [invoice, setInvoice] = useState<Invoice | null>(null);
   const [searched, setSearched] = useState(false);
@@ -20,16 +19,19 @@ export default function BillCheckPage() {
     document.title = "Check Bill - ID&PC Chak";
   }, []);
 
+  // BUG-007 FIX: Search by invoice number alone — customers don't know their userId
   function handleSearch(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
     setTimeout(() => {
-      const uid = userId.trim().toLowerCase();
       const bid = billNo.trim().toLowerCase();
       const found =
         invoices.find(
           (inv) =>
-            inv.userId.toLowerCase() === uid && inv.id.toLowerCase() === bid,
+            inv.id.toLowerCase() === bid ||
+            inv.id.toLowerCase().includes(bid) ||
+            // Support searching without INV- prefix
+            inv.id.replace(/^inv-/i, "").toLowerCase() === bid,
         ) ?? null;
       setInvoice(found);
       setSearched(true);
@@ -49,8 +51,7 @@ export default function BillCheckPage() {
             Check Your Bill
           </h1>
           <p className="text-muted-foreground">
-            Enter your User ID and Bill Number to view and download your
-            invoice.
+            Enter your Invoice Number to view and download your bill.
           </p>
         </div>
 
@@ -62,41 +63,22 @@ export default function BillCheckPage() {
               className="space-y-4"
               data-ocid="bill_check.modal"
             >
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <Label
-                    htmlFor="user-id"
-                    className="text-brand-blue font-semibold"
-                  >
-                    User ID
-                  </Label>
-                  <Input
-                    id="user-id"
-                    value={userId}
-                    onChange={(e) => setUserId(e.target.value)}
-                    placeholder="e.g. CUST-001"
-                    className="mt-1"
-                    required
-                    data-ocid="bill_check.input"
-                  />
-                </div>
-                <div>
-                  <Label
-                    htmlFor="bill-no"
-                    className="text-brand-blue font-semibold"
-                  >
-                    Bill / Invoice Number
-                  </Label>
-                  <Input
-                    id="bill-no"
-                    value={billNo}
-                    onChange={(e) => setBillNo(e.target.value)}
-                    placeholder="e.g. INV-001"
-                    className="mt-1"
-                    required
-                    data-ocid="bill_check.bill_no.input"
-                  />
-                </div>
+              <div>
+                <Label
+                  htmlFor="bill-no"
+                  className="text-brand-blue font-semibold"
+                >
+                  Invoice Number
+                </Label>
+                <Input
+                  id="bill-no"
+                  value={billNo}
+                  onChange={(e) => setBillNo(e.target.value)}
+                  placeholder="e.g. INV-001 or just 001"
+                  className="mt-1"
+                  required
+                  data-ocid="bill_check.input"
+                />
               </div>
               <Button
                 type="submit"
@@ -119,21 +101,18 @@ export default function BillCheckPage() {
           </CardContent>
         </Card>
 
-        {/* Demo hint */}
+        {/* Info hint */}
         <Card className="border border-brand-gold/40 bg-brand-gold/5 mb-8">
           <CardContent className="p-4 flex gap-3">
             <Info className="w-5 h-5 text-brand-gold flex-shrink-0 mt-0.5" />
             <div className="text-sm">
               <p className="font-semibold text-brand-blue mb-1">
-                Demo Bill IDs (for testing):
+                How to find your Invoice Number:
               </p>
               <p className="text-muted-foreground">
-                User ID: <strong>CUST-001</strong>, Bill No:{" "}
-                <strong>INV-001</strong>
-              </p>
-              <p className="text-muted-foreground">
-                User ID: <strong>CUST-002</strong>, Bill No:{" "}
-                <strong>INV-002</strong>
+                Your invoice number is printed on your receipt (e.g.{" "}
+                <strong>INV-1234567890</strong>). Ask the shopkeeper if you
+                don&apos;t have it.
               </p>
             </div>
           </CardContent>
@@ -160,8 +139,8 @@ export default function BillCheckPage() {
                   Bill Not Found
                 </h3>
                 <p className="text-muted-foreground">
-                  No invoice found with the provided User ID and Bill Number.
-                  Please check your details and try again.
+                  No invoice found with that number. Please check the invoice
+                  number and try again.
                 </p>
               </CardContent>
             </Card>

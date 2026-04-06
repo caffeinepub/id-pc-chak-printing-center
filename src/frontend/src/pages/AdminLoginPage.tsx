@@ -2,6 +2,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useActor } from "@/hooks/useActor";
 import {
   canRequestOTP,
   clearOTP,
@@ -13,7 +14,7 @@ import {
   logAuditEvent,
   verifyOTP,
 } from "@/lib/otp";
-import { getAdminPassword } from "@/lib/storage";
+import { getAdminPassword, setAdminPassword } from "@/lib/storage";
 import { Link, useNavigate } from "@tanstack/react-router";
 import {
   AlertCircle,
@@ -29,6 +30,7 @@ import { useEffect, useRef, useState } from "react";
 type Step = "credentials" | "otp";
 
 export default function AdminLoginPage() {
+  const { actor } = useActor();
   const [step, setStep] = useState<Step>("credentials");
 
   // Credentials step state
@@ -79,11 +81,23 @@ export default function AdminLoginPage() {
     };
   }, []);
 
-  function handleLogin(e: React.FormEvent) {
+  async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
     setCredError("");
     setCredSuccess("");
-    const correctPassword = getAdminPassword();
+    // BUG-015 FIX: Check backend password too for cross-device login
+    let correctPassword = getAdminPassword();
+    if (actor) {
+      try {
+        const backendPwd = await actor.getAdminPassword().catch(() => "");
+        if (backendPwd) {
+          setAdminPassword(backendPwd); // sync to localStorage
+          correctPassword = backendPwd;
+        }
+      } catch {
+        // Use local password as fallback
+      }
+    }
     if (username === "Kamran911" && password === correctPassword) {
       logAuditEvent("LOGIN_ATTEMPT", "Credentials verified, generating OTP");
       try {
@@ -222,7 +236,9 @@ export default function AdminLoginPage() {
                 )}
 
                 <form
-                  onSubmit={handleLogin}
+                  onSubmit={(e) => {
+                    void handleLogin(e);
+                  }}
                   className="space-y-5"
                   data-ocid="admin_login.modal"
                 >

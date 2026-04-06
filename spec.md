@@ -1,57 +1,58 @@
 # ID&PC Chak - Printing Center
 
 ## Current State
-
-The app has a React frontend + Motoko backend. All data (employees, services, companies, logo, banner) is fetched from backend every 5 seconds via polling. The core problem is:
-
-1. **Images (employee photos, service images, company logos) use `ExternalBlob.fromURL()` in frontend code** — this silently fails for base64 data URLs because ExternalBlob is designed for CDN URLs, not inline data. Result: images are saved only to localStorage on the uploader's device, never reach the backend, so other devices see empty photos.
-
-2. **Logo and Banner use `actor.setLogo(dataUrl)` / `actor.setBannerImage(dataUrl)** — these store full base64 strings (can be 1-2MB) in backend stable memory. ICP has a per-message 2MB limit — large images silently fail to save.
-
-3. **Homepage has a Services section** — user wants to remove it and replace with: (a) a picture gallery section (admin uploads pictures), (b) a Vision & Mission section (admin can edit the text).
+A full-stack printing center website with React frontend + Motoko backend. Has admin panel, customer dashboard, billing system, employee management, order tracking, reviews system. 24 versions deployed.
 
 ## Requested Changes (Diff)
 
 ### Add
-- `HomepageGallery` backend storage: backend should store an array of gallery image URLs (base64) as a JSON string, similar to how companies are stored — `getGalleryJson` / `setGalleryJson`
-- `VisionMission` backend storage: backend stores vision text and mission text — `getVisionMission` / `setVisionMission` returning `{ vision: string, mission: string }`
-- Homepage: new "Gallery" section showing images uploaded by admin (grid layout)
-- Homepage: new "Vision & Mission" section showing vision and mission text
-- Admin Panel: new "Gallery" tab — admin can upload multiple images, delete them
-- Admin Panel: "About Stats" tab (already exists) — add Vision & Mission text fields
+- Homepage dynamic products/services section (was missing)
+- paymentStatus field saved to backend (currently lost on cross-device)
 
 ### Modify
-- **Fix image storage for employees and services**: Instead of using `ExternalBlob.fromURL()` with base64 data, store employee photos and service images as base64 strings directly in backend using JSON fields (same approach as logo/banner but compressed). The backend should have `photo` field as `text` (string), not `ExternalBlob`. This requires backend regeneration.
-- **Fix logo and banner sync**: Logo and banner are already stored as strings in backend (getLogo/setBannerImage). The issue is `fetchServices` and `fetchEmployees` try to call `s.image.getDirectURL()` on ExternalBlob — fix this to treat `image` as plain string in backend.
-- **Remove Services section from Homepage** — replace with Gallery section + Vision/Mission section
-- `fetchServices`: remove `ExternalBlob.getDirectURL()` call, treat image as plain string
-- `fetchEmployees`: remove `ExternalBlob.getDirectURL()` call, treat photo as plain string
-- `backendAddService` / `backendUpdateService`: remove `ExternalBlob.fromURL()`, pass image as plain string
-- `backendAddEmployee` / `backendUpdateEmployee`: remove `ExternalBlob.fromURL()`, pass photo as plain string
-- Compress images to max 200KB before saving to backend (use canvas resize)
+- **CRITICAL REAL-TIME SYNC FIXES:**
+  - `backendData.ts`: Remove `if (array.length > 0)` guards in ALL fetch functions (fetchServices, fetchEmployees, fetchReviews, fetchInvoices, fetchOrders, fetchContactMessages, fetchBillingItems, fetchBillingCustomers) — always trust backend response even if empty
+  - `AdminDashboardPage.tsx`: Replace local useState for employees/services with useEmployees()/useServices() React Query hooks so admin sees live data
+  - `AdminDashboardPage.tsx`: bannerPreview/logoPreview should sync from useBannerImage()/useLogo() hooks not just localStorage
+- **INVOICE FIXES:**
+  - `InvoiceView.tsx`: Use `invoice.discount` directly instead of recomputing from grandTotal subtraction
+  - `InvoiceView.tsx`: Clamp discount to >=0 to prevent negative values
+  - `AdminDashboardPage.tsx`: handleEditInvoice should restore discountPct from stored discount amount
+  - `AdminDashboardPage.tsx`: handleSaveInvoice auto-save billing customer should use form.address not empty string
+  - `main.mo`: Add paymentStatus field to Invoice type; update all invoice functions
+  - `backendData.ts`: fetchInvoices — drop merge logic, always use backend data; map paymentStatus
+- **ROUTING FIX:**
+  - `PurchasePage.tsx`: Fix useParams `from` path to match actual route `/products/$serviceId`
+  - `ProductsPage.tsx`: Fix Add to Cart button to use router navigate instead of window.location.href
+- **CUSTOMER DASHBOARD FIXES:**
+  - `CustomerDashboardPage.tsx`: Wrap BigInt(session.id) in try/catch to prevent crash
+  - `backendData.ts`: backendAddOrder — ensure customerId is always preserved in localStorage record
+- **OTHER FIXES:**
+  - `BillCheckPage.tsx`: Allow search by invoice number alone (no userId required)
+  - `HomePage.tsx`: Use useApprovedReviews() not useReviews()
+  - `AdminDashboardPage.tsx`: Fix visionText/missionText useEffect to allow empty strings
+  - `ContactPage.tsx`: Remove duplicate localStorage save (message saved twice)
+  - `ContactPage.tsx`: Use proper Google Maps embed from provided share link
+  - `backendData.ts`: saveExtendedData should not update cache on failure
+  - `backendData.ts`: Move serviceImages to servicesJson chunk
+  - `backendData.ts`: Use storage.ts helpers for billing customers
+  - `storage.ts`: Remove DEFAULT_SERVICES hardcoded data (initialize empty)
+  - `AdminLoginPage.tsx`: Fetch admin password from backend for cross-device login
+  - `ResetPasswordPage.tsx`: Fetch admin password from backend for cross-device reset
+  - `AdminDashboardPage.tsx`: Compress company logos before saving
+  - `Navbar.tsx`: Customer session reactivity fix
+  - `main.mo`: Remove hardcoded security answers (initialize empty)
+  - `main.mo`: Fix getCustomerById/updateCustomerLastLogin to not trap
+  - `HomePage.tsx`: Add dynamic products section (loads from backend services)
 
 ### Remove
-- Services section from `HomePage.tsx`
-- `ExternalBlob` usage for employee photos and service images
+- Hardcoded default services from storage.ts initial state
+- Duplicate localStorage message save in ContactPage
 
 ## Implementation Plan
-
-1. **Regenerate Motoko backend** — change `Employee.photo` and `Service.image` from `ExternalBlob` to `Text` (plain string). Add `getVisionMission`/`setVisionMission` and `getGalleryJson`/`setGalleryJson` methods.
-
-2. **Update `backendData.ts`**:
-   - Remove all `ExternalBlob.fromURL()` and `.getDirectURL()` calls
-   - Treat photo/image as plain string (base64)
-   - Add image compression helper (resize to max 800px, quality 0.7 JPEG) before saving to backend
-   - Add `fetchVisionMission`, `saveVisionMission`, `fetchGallery`, `saveGallery` functions
-
-3. **Update `useQueries.ts`**: add `useVisionMission` and `useGallery` hooks with 5s polling
-
-4. **Update `HomePage.tsx`**: remove Services section, add Gallery section (grid of images) and Vision/Mission section
-
-5. **Update `AdminDashboardPage.tsx`**: 
-   - Add Gallery tab (upload images, delete images)
-   - Add Vision/Mission fields to About Stats tab (or new tab)
-   - Fix employee add/edit to compress images before saving
-   - Fix service add/edit to compress images before saving
-
-6. The `declarations/backend.did.d.ts` will be regenerated — `Employee.photo` and `Service.image` will be `string` instead of `ExternalBlob`
+1. Fix `main.mo` backend: add paymentStatus to Invoice, fix trap → optional returns, remove hardcoded answers, remove DEFAULT_SERVICES
+2. Fix `backendData.ts`: remove length>0 guards, fix fetchInvoices merge, fix order customerId, add paymentStatus mapping, move serviceImages chunk, fix billing customers storage helpers, fix cache on save failure
+3. Fix `AdminDashboardPage.tsx`: use React Query hooks for employees/services, fix edit invoice discount, fix banner/logo preview sync, fix vision/mission empty string, fix billing customer auto-save address, compress company logos
+4. Fix page-level bugs: PurchasePage route param, ProductsPage navigation, CustomerDashboardPage crash guard, BillCheckPage userId requirement, HomePage approved reviews + products section, ContactPage duplicate save + map, AdminLoginPage backend password check
+5. Fix InvoiceView discount computation
+6. Validate and deploy

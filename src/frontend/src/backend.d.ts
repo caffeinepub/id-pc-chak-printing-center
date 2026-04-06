@@ -157,7 +157,7 @@ export interface backendInterface {
     getEmployeesJson(): Promise<string>;
     getContactMessage(id: bigint): Promise<ContactMessage | null>;
     getCustomerByEmail(email: string): Promise<CustomerAccount | null>;
-    getCustomerById(id: bigint): Promise<CustomerAccount>;
+    getCustomerById(id: bigint): Promise<CustomerAccount | null>;
     getCustomerOrder(id: bigint): Promise<CustomerOrder | null>;
     getEmployee(id: bigint): Promise<Employee | null>;
     getInvoice(id: bigint): Promise<Invoice | null>;
@@ -181,7 +181,7 @@ export interface backendInterface {
     updateBillingCustomer(id: bigint, customer: BillingCustomer): Promise<boolean>;
     updateBillingItem(id: bigint, item: BillingItem): Promise<boolean>;
     updateCustomer(id: bigint, c: CustomerAccount): Promise<boolean>;
-    updateCustomerLastLogin(id: bigint): Promise<void>;
+    updateCustomerLastLogin(id: bigint): Promise<boolean>;
     updateCustomerOrder(id: bigint, o: CustomerOrder): Promise<boolean>;
     updateEmployee(id: bigint, e: Employee): Promise<boolean>;
     updateInvoice(id: bigint, inv: Invoice): Promise<boolean>;

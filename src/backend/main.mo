@@ -145,9 +145,9 @@ actor {
   let customers = Map.empty<Nat, CustomerAccount>();
   var aboutStats : ?AboutStats = null;
   var securityAnswers : SecurityAnswers = {
-    answer1 = "24-07-2004";
-    answer2 = "4330384851864";
-    answer3 = "03113639008";
+    answer1 = "";
+    answer2 = "";
+    answer3 = "";
   };
 
   include MixinStorage();
@@ -484,11 +484,8 @@ actor {
     } else { false };
   };
 
-  public shared ({ caller }) func getCustomerById(id : Nat) : async CustomerAccount {
-    switch (customers.get(id)) {
-      case (null) { Runtime.trap("Customer not found") };
-      case (?c) { c };
-    };
+  public shared ({ caller }) func getCustomerById(id : Nat) : async ?CustomerAccount {
+    customers.get(id);
   };
 
   public shared ({ caller }) func getCustomerByEmail(email : Text) : async ?CustomerAccount {
@@ -512,9 +509,9 @@ actor {
     } else { false };
   };
 
-  public shared ({ caller }) func updateCustomerLastLogin(id : Nat) : async () {
+  public shared ({ caller }) func updateCustomerLastLogin(id : Nat) : async Bool {
     switch (customers.get(id)) {
-      case (null) { Runtime.trap("Customer not found") };
+      case (null) { false };
       case (?c) {
         customers.add(
           id,
@@ -522,6 +519,7 @@ actor {
             c with lastLoginAt = Time.now();
           },
         );
+        true;
       };
     };
   };

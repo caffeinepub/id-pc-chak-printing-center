@@ -1,10 +1,11 @@
 import { Badge } from "@/components/ui/badge";
 import { useServices } from "@/hooks/useQueries";
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { ArrowRight, PackageX, ShoppingCart, Tag } from "lucide-react";
 import { useEffect } from "react";
 
 export default function ProductsPage() {
+  const navigate = useNavigate();
   const { data: services = [] } = useServices();
 
   useEffect(() => {
@@ -150,7 +151,11 @@ export default function ProductsPage() {
                         className="mt-3 w-full flex items-center justify-center gap-2 bg-brand-blue text-white font-semibold text-sm py-2 rounded-xl shadow hover:bg-brand-blue/90 active:scale-95 transition-all btn-3d btn-3d-blue"
                         onClick={(e) => {
                           e.preventDefault();
-                          window.location.href = `/products/${svc.id}`;
+                          e.stopPropagation();
+                          navigate({
+                            to: "/products/$serviceId",
+                            params: { serviceId: svc.id },
+                          });
                         }}
                       >
                         <ShoppingCart className="w-4 h-4" />

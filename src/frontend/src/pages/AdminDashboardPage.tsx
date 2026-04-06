@@ -8,15 +8,19 @@ import { Textarea } from "@/components/ui/textarea";
 import { useActor } from "@/hooks/useActor";
 import {
   useApprovedReviews,
+  useBannerImage,
   useBillingCustomers,
   useBillingItems,
   useCompanies,
   useContactMessages,
+  useEmployees,
   useGallery,
   useInvalidate,
   useInvoices,
+  useLogo,
   useOrders,
   usePendingReviews,
+  useServices,
   useVisionMission,
 } from "@/hooks/useQueries";
 import {
@@ -59,15 +63,11 @@ import {
   type Review,
   type Service,
   getBannerImage,
-  getEmployees,
   getLogo,
   getNextInvoiceNumber,
   getNextUserId,
   getReviews,
-  getServices,
-  saveEmployees,
   saveReviews,
-  saveServices,
 } from "@/lib/storage";
 import { useNavigate } from "@tanstack/react-router";
 import {
@@ -178,8 +178,9 @@ export default function AdminDashboardPage() {
   const { data: pendingReviews = [] } = usePendingReviews();
   const { data: approvedReviews = [] } = useApprovedReviews();
   const [_reviews, setReviews] = useState<Review[]>([]);
-  const [employees, setEmployees] = useState<Employee[]>([]);
-  const [services, setServices] = useState<Service[]>([]);
+  // BUG-002 FIX: Use React Query hooks for employees & services (real-time sync across devices)
+  const { data: employees = [] } = useEmployees();
+  const { data: services = [] } = useServices();
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
   const [editingInvoice, setEditingInvoice] = useState<Invoice | null>(null);
 
@@ -305,19 +306,27 @@ export default function AdminDashboardPage() {
       return;
     }
     setReviews(getReviews());
-    setEmployees(getEmployees());
-    setServices(getServices());
     setBannerPreview(getBannerImage());
     setLogoPreview(getLogo());
     setAboutYears(localStorage.getItem("idpc_years_experience") || "10+");
     setAboutClients(localStorage.getItem("idpc_num_clients") || "1000+");
   }, [navigate]);
 
-  // Sync vision/mission text when data loads
+  // BUG-014 FIX: Sync vision/mission text unconditionally (allow clearing)
   useEffect(() => {
-    if (visionMission.vision) setVisionText(visionMission.vision);
-    if (visionMission.mission) setMissionText(visionMission.mission);
+    setVisionText(visionMission.vision ?? "");
+    setMissionText(visionMission.mission ?? "");
   }, [visionMission.vision, visionMission.mission]);
+
+  // BUG-022 FIX: Sync banner/logo preview from backend hooks so they stay current
+  const { data: bannerFromBackend } = useBannerImage();
+  const { data: logoFromBackend } = useLogo();
+  useEffect(() => {
+    if (bannerFromBackend) setBannerPreview(bannerFromBackend);
+  }, [bannerFromBackend]);
+  useEffect(() => {
+    if (logoFromBackend) setLogoPreview(logoFromBackend);
+  }, [logoFromBackend]);
 
   // Load customers when customers tab becomes active
   useEffect(() => {
@@ -448,12 +457,12 @@ export default function AdminDashboardPage() {
         paymentStatus: form.paymentStatus || "unpaid",
       };
       await backendAddInvoice(actor, invoice);
-      // Auto-save customer to billing customers list
+      // BUG-009 FIX: Auto-save customer to billing customers list with actual address
       if (invoice.customerName.trim()) {
         await backendAddBillingCustomer(actor, {
           name: invoice.customerName,
           phone: invoice.phone,
-          address: "",
+          address: form.address || invoice.address || "",
         });
         invalidate(["billingCustomers"]);
       }
@@ -465,6 +474,15 @@ export default function AdminDashboardPage() {
 
   function handleEditInvoice(inv: Invoice) {
     setEditingInvoice(inv);
+    // BUG-008 FIX: Calculate discount percentage from stored discount and subtotal
+    const editSubtotal = inv.items.reduce(
+      (s, item) => s + Number(item.total || 0),
+      0,
+    );
+    const restoredDiscountPct =
+      editSubtotal > 0
+        ? Math.round((Number(inv.discount) / editSubtotal) * 100)
+        : 0;
     setForm({
       customerName: inv.customerName,
       userId: inv.userId,
@@ -473,7 +491,7 @@ export default function AdminDashboardPage() {
       date: inv.date,
       terms: inv.terms,
       advance: inv.advance,
-      discountPct: 0,
+      discountPct: restoredDiscountPct,
       paymentStatus: inv.paymentStatus || "unpaid",
     });
     setItems(
@@ -573,18 +591,8 @@ export default function AdminDashboardPage() {
     if (editingEmp) {
       const updated = { ...empForm, id: editingEmp.id };
       await backendUpdateEmployee(actor, updated);
-      setEmployees((prev) => {
-        const list = prev.map((em) => (em.id === editingEmp.id ? updated : em));
-        saveEmployees(list);
-        return list;
-      });
     } else {
-      const newEmp = await backendAddEmployee(actor, empForm);
-      setEmployees((prev) => {
-        const list = [...prev, newEmp];
-        saveEmployees(list);
-        return list;
-      });
+      await backendAddEmployee(actor, empForm);
     }
     setEmpForm(emptyEmp);
     setEditingEmp(null);
@@ -609,11 +617,6 @@ export default function AdminDashboardPage() {
   async function handleDeleteEmp(id: string) {
     if (window.confirm("Delete this employee?")) {
       await backendDeleteEmployee(actor, id);
-      setEmployees((prev) => {
-        const list = prev.filter((em) => em.id !== id);
-        saveEmployees(list);
-        return list;
-      });
       invalidate(["employees"]);
     }
   }
@@ -632,18 +635,8 @@ export default function AdminDashboardPage() {
     if (editingSvc) {
       const updated = { ...svcForm, id: editingSvc.id };
       await backendUpdateService(actor, updated);
-      setServices((prev) => {
-        const list = prev.map((s) => (s.id === editingSvc.id ? updated : s));
-        saveServices(list);
-        return list;
-      });
     } else {
-      const newSvc = await backendAddService(actor, svcForm);
-      setServices((prev) => {
-        const list = [...prev, newSvc];
-        saveServices(list);
-        return list;
-      });
+      await backendAddService(actor, svcForm);
     }
     setSvcForm(emptySvc);
     setEditingSvc(null);
@@ -667,11 +660,6 @@ export default function AdminDashboardPage() {
   async function handleDeleteSvc(id: string) {
     if (window.confirm("Delete this service?")) {
       await backendDeleteService(actor, id);
-      setServices((prev) => {
-        const list = prev.filter((s) => s.id !== id);
-        saveServices(list);
-        return list;
-      });
       invalidate(["services"]);
     }
   }
@@ -3672,15 +3660,23 @@ export default function AdminDashboardPage() {
                         type="file"
                         accept="image/*"
                         className="mt-1 block w-full text-sm text-muted-foreground file:mr-3 file:py-1.5 file:px-3 file:rounded file:border-0 file:text-xs file:bg-brand-blue file:text-white"
-                        onChange={(e) => {
+                        onChange={async (e) => {
                           const file = e.target.files?.[0];
                           if (!file) return;
                           const reader = new FileReader();
-                          reader.onload = (ev) =>
+                          reader.onload = async (ev) => {
+                            const raw = ev.target?.result as string;
+                            // BUG-023 FIX: Compress company logo before saving (same as employee photos)
+                            const compressed = await compressImage(
+                              raw,
+                              200,
+                              0.65,
+                            );
                             setCompanyForm((p) => ({
                               ...p,
-                              logo: ev.target?.result as string,
+                              logo: compressed,
                             }));
+                          };
                           reader.readAsDataURL(file);
                         }}
                       />

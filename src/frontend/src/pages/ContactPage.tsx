@@ -6,7 +6,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useActor } from "@/hooks/useActor";
 import { useInvalidate } from "@/hooks/useQueries";
 import { backendAddContactMessage } from "@/lib/backendData";
-import { saveMessage } from "@/lib/storage";
+
 import { CheckCircle, Clock, Mail, MapPin, Phone } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -39,9 +39,7 @@ export default function ContactPage() {
     }
     setSubmitting(true);
     try {
-      // Save to localStorage
-      saveMessage(form);
-      // Save to backend
+      // Save to backend only (backendAddContactMessage falls back to localStorage if needed)
       await backendAddContactMessage(actor, form);
       invalidate(["contactMessages"]);
       setSubmitted(true);
@@ -302,7 +300,7 @@ export default function ContactPage() {
           </div>
           <div className="rounded-xl overflow-hidden shadow-lg border-2 border-brand-blue-mid">
             <iframe
-              src="https://maps.google.com/maps?q=Rustam+Road+Chak+Near+Nako+Number+1+Chak+District+Shikarpur&output=embed"
+              src="https://maps.google.com/maps?q=Rustam+Road,+Chak+No.1,+District+Shikarpur,+Sindh,+Pakistan&output=embed"
               width="100%"
               height="400"
               style={{ border: 0 }}

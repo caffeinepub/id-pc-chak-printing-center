@@ -97,7 +97,7 @@ export interface BillingItem {
   category: string;
 }
 
-const DEFAULT_SERVICES: Service[] = [
+const _DEFAULT_SERVICES: Service[] = [
   {
     id: "s1",
     name: "Number Plates",
@@ -277,7 +277,7 @@ export function initStorage() {
     localStorage.setItem(KEYS.employees, JSON.stringify([]));
   }
   if (!localStorage.getItem(KEYS.services)) {
-    localStorage.setItem(KEYS.services, JSON.stringify(DEFAULT_SERVICES));
+    localStorage.setItem(KEYS.services, JSON.stringify([]));
   }
   if (!localStorage.getItem(KEYS.orders)) {
     localStorage.setItem(KEYS.orders, JSON.stringify([]));
@@ -497,7 +497,7 @@ export function deleteEmployee(id: string) {
 
 export function getServices(): Service[] {
   const data = localStorage.getItem(KEYS.services);
-  return data ? JSON.parse(data) : DEFAULT_SERVICES;
+  return data ? JSON.parse(data) : [];
 }
 
 export function saveServices(services: Service[]) {

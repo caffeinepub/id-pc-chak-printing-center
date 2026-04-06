@@ -1,26 +1,38 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
+  useApprovedReviews,
   useBannerImage,
   useEmployees,
   useGallery,
   useLogo,
-  useReviews,
+  useServices,
   useVisionMission,
 } from "@/hooks/useQueries";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { ArrowRight, Mail, MapPin, Phone, Star, Users } from "lucide-react";
+import {
+  ArrowRight,
+  Mail,
+  MapPin,
+  Phone,
+  Star,
+  Tag,
+  Users,
+} from "lucide-react";
 import { useEffect } from "react";
 
 export default function HomePage() {
   const navigate = useNavigate();
-  const { data: reviews = [] } = useReviews();
+  // BUG-010 FIX: Use useApprovedReviews instead of useReviews for visitor-facing reviews
+  const { data: reviews = [] } = useApprovedReviews();
   const { data: bannerImage = "" } = useBannerImage();
   const { data: employees = [] } = useEmployees();
   const { data: logo = "" } = useLogo();
   const { data: gallery = [] } = useGallery();
   const { data: visionMission = { vision: "", mission: "" } } =
     useVisionMission();
+  // BUG-011: Load services for the homepage services section
+  const { data: services = [] } = useServices();
 
   useEffect(() => {
     document.title = "ID&PC Chak - Ihsan Designing & Printing Center";
@@ -64,8 +76,8 @@ export default function HomePage() {
             </h1>
             <p className="text-white/80 text-lg mb-8 leading-relaxed animate-fade-in-up animate-delay-200">
               Professional flex printing, wedding cards, photo studio, visiting
-              cards, T-shirt printing, and much more — at affordable prices.
-              Serving Rustam Road Chak, District Shikarpur since 2015.
+              cards, T-shirt printing, and much more &mdash; at affordable
+              prices. Serving Rustam Road Chak, District Shikarpur since 2015.
             </p>
             <div className="flex flex-wrap gap-4 animate-fade-in-up animate-delay-300">
               <Button
@@ -141,6 +153,113 @@ export default function HomePage() {
           </div>
         </div>
       </section>
+
+      {/* BUG-011 FIX: Dynamic Services Section */}
+      {services.length > 0 && (
+        <section className="py-20 bg-muted/30">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="text-center mb-12">
+              <p className="text-brand-gold font-semibold text-sm uppercase tracking-widest mb-2">
+                What We Offer
+              </p>
+              <h2 className="font-heading font-bold text-3xl sm:text-4xl text-brand-blue">
+                Our Services
+              </h2>
+              <p className="text-muted-foreground mt-2">
+                {services.length}+ professional printing and designing services
+              </p>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+              {services.slice(0, 6).map((svc, i) => {
+                const discountPct =
+                  svc.discount && svc.discount > 0 ? svc.discount : 0;
+                const parsedPrice = svc.price
+                  ? (() => {
+                      const match = svc.price.match(/[\d,]+/);
+                      if (!match) return null;
+                      return Number.parseInt(match[0].replace(/,/g, ""), 10);
+                    })()
+                  : null;
+                const finalPrice =
+                  parsedPrice && discountPct > 0
+                    ? Math.round(parsedPrice * (1 - discountPct / 100))
+                    : null;
+                return (
+                  <Link
+                    key={svc.id}
+                    to="/products/$serviceId"
+                    params={{ serviceId: svc.id }}
+                    className="block group"
+                    data-ocid={`home.services.item.${i + 1}`}
+                  >
+                    <Card className="border-2 border-border shadow-card card-3d hover:border-brand-gold/50 transition-all h-full">
+                      <CardContent className="p-5">
+                        <div className="flex items-center gap-3 mb-3">
+                          {svc.image ? (
+                            <img
+                              src={svc.image}
+                              alt={svc.name}
+                              className="w-12 h-12 rounded-lg object-cover"
+                            />
+                          ) : (
+                            <span className="text-3xl">{svc.icon}</span>
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <h3 className="font-heading font-bold text-sm text-brand-blue leading-tight">
+                              {svc.name}
+                            </h3>
+                            <span
+                              className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
+                                svc.inStock !== false
+                                  ? "bg-green-50 text-green-700"
+                                  : "bg-red-50 text-red-600"
+                              }`}
+                            >
+                              {svc.inStock !== false ? "In Stock" : "Sold Out"}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between mt-3 pt-3 border-t border-border">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            {discountPct > 0 && parsedPrice ? (
+                              <>
+                                <span className="text-muted-foreground line-through text-xs">
+                                  Rs {parsedPrice.toLocaleString()}
+                                </span>
+                                <span className="font-bold text-brand-gold text-sm">
+                                  Rs {finalPrice?.toLocaleString()}
+                                </span>
+                              </>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 text-brand-gold text-sm font-bold">
+                                <Tag className="w-3 h-3" /> {svc.price}
+                              </span>
+                            )}
+                          </div>
+                          <ArrowRight className="w-4 h-4 text-brand-gold group-hover:translate-x-1 transition-transform" />
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </Link>
+                );
+              })}
+            </div>
+            {services.length > 6 && (
+              <div className="text-center mt-8">
+                <Link to="/products">
+                  <Button
+                    className="bg-brand-blue text-white hover:bg-brand-blue-dark font-semibold px-8 btn-3d btn-3d-blue"
+                    data-ocid="home.services.primary_button"
+                  >
+                    View All {services.length} Services{" "}
+                    <ArrowRight className="w-4 h-4 ml-2" />
+                  </Button>
+                </Link>
+              </div>
+            )}
+          </div>
+        </section>
+      )}
 
       {/* Gallery Section — only shown when images uploaded */}
       {gallery.length > 0 && (
@@ -224,7 +343,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* Reviews Section */}
+      {/* Reviews Section — BUG-010 FIX: only approved reviews */}
       {reviews.length > 0 && (
         <section className="py-20 bg-background">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">

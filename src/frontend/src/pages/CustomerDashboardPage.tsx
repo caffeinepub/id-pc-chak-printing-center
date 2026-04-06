@@ -59,8 +59,15 @@ export default function CustomerDashboardPage() {
       if (!session) return;
       setLoading(true);
       try {
+        // BUG-003 FIX: Wrap BigInt conversion in try/catch to prevent crash
+        let customerId: bigint;
+        try {
+          customerId = BigInt(session.id);
+        } catch {
+          customerId = BigInt(0);
+        }
         const [ordersData, invoicesData] = await Promise.all([
-          fetchCustomerOrders(actor, BigInt(session.id), session.phone),
+          fetchCustomerOrders(actor, customerId, session.phone),
           fetchCustomerInvoices(actor, session.phone),
         ]);
         if (!cancelled) {

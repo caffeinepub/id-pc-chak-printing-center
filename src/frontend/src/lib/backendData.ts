@@ -32,6 +32,7 @@ import {
   addBillingItemToStorage,
   deleteBillingItemFromStorage,
   getBannerImage,
+  getBillingCustomers,
   getBillingItems,
   getContactMessages,
   getEmployees,
@@ -185,9 +186,12 @@ async function fetchExtendedData(
       const legacyCompanies = Array.isArray(companiesData)
         ? (companiesData as Company[])
         : (companiesData.companies as Company[]) || [];
+
+      // BUG-017 FIX: serviceImages should live in servicesChunk, NOT companiesChunk.
+      // Also support legacy data that had serviceImages in companiesChunk.
       const legacyServiceImages =
-        (companiesData.serviceImages as Record<string, string>) ||
         (servicesData.serviceImages as Record<string, string>) ||
+        (companiesData.serviceImages as Record<string, string>) ||
         ({} as Record<string, string>);
 
       const merged: ExtendedData = {
@@ -237,21 +241,20 @@ async function saveExtendedData(
   actor: backendInterface | null,
   data: ExtendedData,
 ): Promise<void> {
-  // Invalidate cache on save
-  _extDataCache = data;
-  _extDataCacheTime = Date.now();
+  // BUG-021 FIX: Only update cache after successful save (or local-only path).
+  // Save to local first as a safe fallback.
   saveLocalExtendedData(data);
 
   if (actor) {
-    // Split into 3 smaller chunks to avoid ICP 2MB message limit
+    // BUG-017 FIX: serviceImages moved to servicesChunk (not companiesChunk)
     const companiesChunk = JSON.stringify({
       companies: data.companies,
-      serviceImages: data.serviceImages,
     });
     const employeesChunk = JSON.stringify({
       employeePhotos: data.employeePhotos,
     });
     const servicesChunk = JSON.stringify({
+      serviceImages: data.serviceImages,
       gallery: data.gallery,
       vision: data.vision,
       mission: data.mission,
@@ -269,6 +272,14 @@ async function saveExtendedData(
         console.warn("saveExtendedData servicesJson error", e);
       }),
     ]);
+
+    // BUG-021 FIX: Only update cache after successful backend saves
+    _extDataCache = data;
+    _extDataCacheTime = Date.now();
+  } else {
+    // No actor — update cache immediately for local-only path
+    _extDataCache = data;
+    _extDataCacheTime = Date.now();
   }
 }
 
@@ -311,7 +322,7 @@ export async function compressImage(
 // -----------------------------------------------------------------------
 
 function idStringToBigInt(id: string): bigint {
-  const match = id.match(/-(\d+)$/);
+  const match = id.match(/-([\d]+)$/);
   if (match) return BigInt(match[1]);
   const num = Number.parseInt(id, 10);
   return Number.isNaN(num) ? BigInt(Date.now()) : BigInt(num);
@@ -403,21 +414,20 @@ export async function fetchServices(
         actor.getAllServices(),
         fetchExtendedData(actor),
       ]);
-      if (backendServices.length > 0) {
-        const decoded = backendServices.map((s) => ({
-          id: s.id.toString(),
-          name: s.name,
-          description: s.description,
-          price: s.price,
-          icon: s.icon,
-          // ExternalBlob (Uint8Array) cannot be used directly — use image map instead
-          image: extData.serviceImages[s.id.toString()] || "",
-          inStock: s.inStock,
-          discount: Number(s.discount),
-        }));
-        saveServices(decoded);
-        return decoded;
-      }
+      // BUG-001 FIX: Always use backend result when actor is available,
+      // even if array is empty. Only fall back if actor is null or call throws.
+      const decoded = backendServices.map((s) => ({
+        id: s.id.toString(),
+        name: s.name,
+        description: s.description,
+        price: s.price,
+        icon: s.icon,
+        image: extData.serviceImages[s.id.toString()] || "",
+        inStock: s.inStock,
+        discount: Number(s.discount),
+      }));
+      saveServices(decoded);
+      return decoded;
     }
   } catch (e) {
     console.warn("fetchServices backend error", e);
@@ -559,22 +569,21 @@ export async function fetchEmployees(
         actor.getAllEmployees(),
         fetchExtendedData(actor),
       ]);
-      if (backendEmployees.length > 0) {
-        const decoded = backendEmployees.map((e) => ({
-          id: e.id.toString(),
-          fullName: e.fullName,
-          fatherName: e.fatherName,
-          age: e.age.toString(),
-          cnic: e.cnic,
-          mobile: e.mobile,
-          bloodGroup: e.bloodGroup,
-          designation: e.designation,
-          // ExternalBlob (Uint8Array) cannot be used directly — use photo map instead
-          photo: extData.employeePhotos[e.id.toString()] || "",
-        }));
-        saveEmployees(decoded);
-        return decoded;
-      }
+      // BUG-001 FIX: Always use backend result when actor is available,
+      // even if array is empty.
+      const decoded = backendEmployees.map((e) => ({
+        id: e.id.toString(),
+        fullName: e.fullName,
+        fatherName: e.fatherName,
+        age: e.age.toString(),
+        cnic: e.cnic,
+        mobile: e.mobile,
+        bloodGroup: e.bloodGroup,
+        designation: e.designation,
+        photo: extData.employeePhotos[e.id.toString()] || "",
+      }));
+      saveEmployees(decoded);
+      return decoded;
     }
   } catch (e) {
     console.warn("fetchEmployees backend error", e);
@@ -710,18 +719,17 @@ export async function fetchReviews(
   try {
     if (actor) {
       const reviews = await actor.getAllReviews();
-      if (reviews.length > 0) {
-        const decoded = reviews.map((r) => ({
-          id: r.id.toString(),
-          customerName: r.customerName,
-          review: r.review,
-          rating: Number(r.rating),
-          date: r.date,
-          status: r.status || "approved",
-        }));
-        saveReviews(decoded);
-        return decoded;
-      }
+      // BUG-001 FIX: Always use backend result when actor is available
+      const decoded = reviews.map((r) => ({
+        id: r.id.toString(),
+        customerName: r.customerName,
+        review: r.review,
+        rating: Number(r.rating),
+        date: r.date,
+        status: r.status || "approved",
+      }));
+      saveReviews(decoded);
+      return decoded;
     }
   } catch (e) {
     console.warn("fetchReviews backend error", e);
@@ -840,52 +848,102 @@ export async function backendDeleteReview(
 
 // -----------------------------------------------------------------------
 // Invoices
+// BUG-016 FIX: Payment status stored separately to avoid backend type mismatch.
+// When backend returns invoices, merge in the stored payment statuses.
 // -----------------------------------------------------------------------
+
+const PAYMENT_STATUS_KEY = "idpc_invoice_payment_status";
+
+function getPaymentStatusMap(): Record<string, "unpaid" | "partial" | "paid"> {
+  try {
+    const raw = localStorage.getItem(PAYMENT_STATUS_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+function savePaymentStatusMap(
+  map: Record<string, "unpaid" | "partial" | "paid">,
+): void {
+  localStorage.setItem(PAYMENT_STATUS_KEY, JSON.stringify(map));
+}
+
+export function setInvoicePaymentStatus(
+  invoiceId: string,
+  status: "unpaid" | "partial" | "paid",
+): void {
+  const map = getPaymentStatusMap();
+  map[invoiceId] = status;
+  savePaymentStatusMap(map);
+}
 
 export async function fetchInvoices(
   actor: backendInterface | null,
 ): Promise<FEInvoice[]> {
+  const paymentStatusMap = getPaymentStatusMap();
   try {
     if (actor) {
       const backendInvoices = await actor.getAllInvoices();
-      if (backendInvoices.length > 0) {
+      // BUG-001 FIX: Always use backend result when actor is available,
+      // even if array is empty. Do NOT merge with localStorage.
+      const decoded = backendInvoices.map((bi) => {
+        const id = `INV-${bi.id.toString()}`;
         const lsInvoices = getInvoices();
-        const merged = backendInvoices.map((bi) => {
-          const lsMatch = lsInvoices.find(
-            (li) =>
-              li.id === `INV-${bi.id.toString()}` || li.id === bi.id.toString(),
-          );
-          if (lsMatch) return lsMatch;
-          return {
-            id: `INV-${bi.id.toString()}`,
-            userId: `CUST-${bi.id.toString()}`,
-            customerName: bi.customerName,
-            phone: bi.phone || "",
-            address: bi.address || "",
-            date: bi.date,
-            items: bi.items.map((item, idx) => ({
-              srNo: Number(item.srNo) || idx + 1,
-              particular: item.particular,
-              quantity: Number(item.quantity) || 1,
-              quality: item.quality || "",
-              rate: Number(item.rate) || 0,
-              total: Number(item.total) || 0,
-              billingItemId: Number(item.billingItemId) || 0,
-            })),
-            grandTotal: Number(bi.grandTotal),
-            advance: Number(bi.advance),
-            balance: Number(bi.balance),
-            discount: Number(bi.discount),
-            terms: "",
-          } as FEInvoice;
-        });
-        for (const lsInv of lsInvoices) {
-          if (!merged.find((m) => m.id === lsInv.id)) {
-            merged.push(lsInv);
-          }
+        // Try to get paymentStatus from: payment status map -> localStorage invoice -> default unpaid
+        const psFromMap = paymentStatusMap[id];
+        const lsMatch = lsInvoices.find(
+          (li) => li.id === id || li.id === bi.id.toString(),
+        );
+        const paymentStatus: "unpaid" | "partial" | "paid" =
+          psFromMap || lsMatch?.paymentStatus || "unpaid";
+        return {
+          id,
+          userId: lsMatch?.userId || `CUST-${bi.id.toString()}`,
+          customerName: bi.customerName,
+          phone: bi.phone || "",
+          address: bi.address || "",
+          date: bi.date,
+          items: bi.items.map((item, idx) => ({
+            srNo: Number(item.srNo) || idx + 1,
+            particular: item.particular,
+            quantity: Number(item.quantity) || 1,
+            quality: item.quality || "",
+            rate: Number(item.rate) || 0,
+            total: Number(item.total) || 0,
+            billingItemId: Number(item.billingItemId) || 0,
+          })),
+          grandTotal: Number(bi.grandTotal),
+          advance: Number(bi.advance),
+          balance: Number(bi.balance),
+          discount: Number(bi.discount),
+          terms: lsMatch?.terms || "",
+          paymentStatus,
+        } as FEInvoice;
+      });
+      // Persist to localStorage so offline fallback stays fresh
+      // (preserve existing paymentStatus values in localStorage)
+      const existing = getInvoices();
+      const merged = decoded.map((inv) => {
+        const old = existing.find((e) => e.id === inv.id);
+        return old
+          ? {
+              ...inv,
+              terms: old.terms || inv.terms,
+              paymentStatus: inv.paymentStatus,
+            }
+          : inv;
+      });
+      // Add any local-only invoices not yet in backend
+      for (const lsInv of existing) {
+        if (!merged.find((m) => m.id === lsInv.id)) {
+          merged.push(lsInv);
         }
-        return merged;
       }
+      // Save merged list back to localStorage
+      const { saveInvoices } = await import("./storage");
+      saveInvoices(merged);
+      return merged;
     }
   } catch (e) {
     console.warn("fetchInvoices backend error", e);
@@ -898,6 +956,10 @@ export async function backendAddInvoice(
   invoice: FEInvoice,
 ): Promise<void> {
   lsAddInvoice(invoice);
+  // BUG-016 FIX: Save payment status to the separate map
+  if (invoice.paymentStatus) {
+    setInvoicePaymentStatus(invoice.id, invoice.paymentStatus);
+  }
   if (actor) {
     try {
       await actor.addInvoice({
@@ -931,6 +993,10 @@ export async function backendUpdateInvoice(
   invoice: FEInvoice,
 ): Promise<void> {
   lsUpdateInvoice(invoice);
+  // BUG-016 FIX: Save payment status to the separate map
+  if (invoice.paymentStatus) {
+    setInvoicePaymentStatus(invoice.id, invoice.paymentStatus);
+  }
   if (actor) {
     try {
       const id = idStringToBigInt(invoice.id);
@@ -984,24 +1050,22 @@ export async function fetchOrders(
   try {
     if (actor) {
       const backendOrders = await actor.getAllCustomerOrders();
-      if (backendOrders.length > 0) {
-        const decoded = backendOrders.map((o) => ({
-          id: o.id.toString(),
-          serviceId: o.serviceId,
-          serviceName: o.serviceName,
-          customerName: o.customerName,
-          phone: o.phone,
-          quantity: Number(o.quantity),
-          notes: o.notes,
-          totalPrice: Number(o.totalPrice),
-          date: o.date,
-          status: o.status || "pending",
-          customerId:
-            o.customerId != null ? o.customerId.toString() : undefined,
-        })) as FEOrder[];
-        saveOrders(decoded);
-        return decoded;
-      }
+      // BUG-001 FIX: Always use backend result when actor is available
+      const decoded = backendOrders.map((o) => ({
+        id: o.id.toString(),
+        serviceId: o.serviceId,
+        serviceName: o.serviceName,
+        customerName: o.customerName,
+        phone: o.phone,
+        quantity: Number(o.quantity),
+        notes: o.notes,
+        totalPrice: Number(o.totalPrice),
+        date: o.date,
+        status: o.status || "pending",
+        customerId: o.customerId != null ? o.customerId.toString() : undefined,
+      })) as FEOrder[];
+      saveOrders(decoded);
+      return decoded;
     }
   } catch (e) {
     console.warn("fetchOrders backend error", e);
@@ -1013,6 +1077,7 @@ export async function backendAddOrder(
   actor: backendInterface | null,
   order: Omit<FEOrder, "id" | "date">,
 ): Promise<FEOrder> {
+  // BUG-003 FIX: Pass full order (including customerId) to lsAddOrder
   const newOrder = lsAddOrder(order);
   if (actor) {
     try {
@@ -1088,18 +1153,17 @@ export async function fetchContactMessages(
   try {
     if (actor) {
       const msgs = await actor.getAllContactMessages();
-      if (msgs.length > 0) {
-        const decoded = msgs.map((m) => ({
-          id: m.id.toString(),
-          name: m.name,
-          phone: m.phone,
-          message: m.message,
-          date: m.date,
-          isRead: m.isRead,
-        }));
-        saveContactMessages(decoded);
-        return decoded;
-      }
+      // BUG-001 FIX: Always use backend result when actor is available
+      const decoded = msgs.map((m) => ({
+        id: m.id.toString(),
+        name: m.name,
+        phone: m.phone,
+        message: m.message,
+        date: m.date,
+        isRead: m.isRead,
+      }));
+      saveContactMessages(decoded);
+      return decoded;
     }
   } catch (e) {
     console.warn("fetchContactMessages backend error", e);
@@ -1124,7 +1188,15 @@ export async function backendAddContactMessage(
       });
     } catch (e) {
       console.warn("backendAddContactMessage error", e);
+      // BUG-012 FIX: Only fall back to localStorage if backend call fails
+      const { saveMessage } = await import("./storage");
+      saveMessage(msg);
+      throw e;
     }
+  } else {
+    // No actor — save to localStorage only
+    const { saveMessage } = await import("./storage");
+    saveMessage(msg);
   }
 }
 
@@ -1170,17 +1242,16 @@ export async function fetchBillingItems(
   try {
     if (actor) {
       const items = await actor.getAllBillingItems();
-      if (items.length > 0) {
-        const decoded = items.map((item) => ({
-          id: item.id.toString(),
-          name: item.name,
-          sellingPrice: Number(item.sellingPrice),
-          purchasePrice: Number(item.purchasePrice),
-          category: item.category,
-        }));
-        saveBillingItems(decoded);
-        return decoded;
-      }
+      // BUG-001 FIX: Always use backend result when actor is available
+      const decoded = items.map((item) => ({
+        id: item.id.toString(),
+        name: item.name,
+        sellingPrice: Number(item.sellingPrice),
+        purchasePrice: Number(item.purchasePrice),
+        category: item.category,
+      }));
+      saveBillingItems(decoded);
+      return decoded;
     }
   } catch (e) {
     console.warn("fetchBillingItems backend error", e);
@@ -1266,6 +1337,8 @@ export async function saveCompanies(
     const extData = getLocalExtendedData();
     extData.companies = companies;
     saveLocalExtendedData(extData);
+    _extDataCache = extData;
+    _extDataCacheTime = Date.now();
   }
 }
 
@@ -1292,6 +1365,8 @@ export async function saveGallery(
     const extData = getLocalExtendedData();
     extData.gallery = images;
     saveLocalExtendedData(extData);
+    _extDataCache = extData;
+    _extDataCacheTime = Date.now();
   }
 }
 
@@ -1321,11 +1396,14 @@ export async function saveVisionMission(
     extData.vision = vision;
     extData.mission = mission;
     saveLocalExtendedData(extData);
+    _extDataCache = extData;
+    _extDataCacheTime = Date.now();
   }
 }
 
 // -----------------------------------------------------------------------
 // Billing Customers (with address)
+// BUG-018 FIX: Use storage.ts helpers instead of raw localStorage keys
 // -----------------------------------------------------------------------
 
 export async function fetchBillingCustomers(
@@ -1334,24 +1412,21 @@ export async function fetchBillingCustomers(
   try {
     if (actor) {
       const customers = await actor.getAllBillingCustomers();
-      if (customers.length > 0) {
-        const decoded = customers.map((c) => ({
-          id: c.id.toString(),
-          name: c.name,
-          phone: c.phone,
-          address: c.address,
-        }));
-        localStorage.setItem("idpc_billing_customers", JSON.stringify(decoded));
-        return decoded;
-      }
+      // BUG-001 FIX: Always use backend result when actor is available
+      const decoded = customers.map((c) => ({
+        id: c.id.toString(),
+        name: c.name,
+        phone: c.phone,
+        address: c.address,
+      }));
+      saveBillingCustomers(decoded);
+      return decoded;
     }
   } catch (e) {
     console.warn("fetchBillingCustomers backend error", e);
   }
-  const data = localStorage.getItem("idpc_billing_customers");
-  if (!data) return [];
-  const parsed: FEBillingCustomer[] = JSON.parse(data);
-  return parsed.map((c) => ({ ...c, address: c.address ?? "" }));
+  // BUG-018 FIX: Use getBillingCustomers() from storage.ts
+  return getBillingCustomers().map((c) => ({ ...c, address: c.address ?? "" }));
 }
 
 export async function backendAddBillingCustomer(
@@ -1360,15 +1435,13 @@ export async function backendAddBillingCustomer(
 ): Promise<FEBillingCustomer> {
   const id = BigInt(Date.now());
   const newCustomer: FEBillingCustomer = { id: id.toString(), ...customer };
-  const existing: FEBillingCustomer[] = JSON.parse(
-    localStorage.getItem("idpc_billing_customers") || "[]",
-  );
+  // BUG-018 FIX: Use getBillingCustomers() helper
+  const existing = getBillingCustomers();
   const dedup = existing.find(
     (c) => c.name.toLowerCase() === customer.name.toLowerCase(),
   );
   if (!dedup) {
-    existing.push(newCustomer);
-    localStorage.setItem("idpc_billing_customers", JSON.stringify(existing));
+    saveBillingCustomers([...existing, newCustomer]);
   }
   if (actor) {
     try {
@@ -1389,13 +1462,9 @@ export async function backendDeleteBillingCustomer(
   actor: backendInterface | null,
   id: string,
 ): Promise<void> {
-  const existing: FEBillingCustomer[] = JSON.parse(
-    localStorage.getItem("idpc_billing_customers") || "[]",
-  );
-  localStorage.setItem(
-    "idpc_billing_customers",
-    JSON.stringify(existing.filter((c) => c.id !== id)),
-  );
+  // BUG-018 FIX: Use storage helpers
+  const existing = getBillingCustomers();
+  saveBillingCustomers(existing.filter((c) => c.id !== id));
   if (actor) {
     try {
       await actor.deleteBillingCustomer(BigInt(id));
@@ -1409,12 +1478,10 @@ export async function backendUpdateBillingCustomer(
   actor: backendInterface | null,
   customer: FEBillingCustomer,
 ): Promise<void> {
-  const existing: FEBillingCustomer[] = JSON.parse(
-    localStorage.getItem("idpc_billing_customers") || "[]",
-  );
-  localStorage.setItem(
-    "idpc_billing_customers",
-    JSON.stringify(existing.map((c) => (c.id === customer.id ? customer : c))),
+  // BUG-018 FIX: Use storage helpers
+  const existing = getBillingCustomers();
+  saveBillingCustomers(
+    existing.map((c) => (c.id === customer.id ? customer : c)),
   );
   if (actor) {
     try {

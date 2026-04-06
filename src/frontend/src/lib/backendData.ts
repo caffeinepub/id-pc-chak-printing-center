@@ -432,7 +432,8 @@ export async function fetchServices(
   } catch (e) {
     console.warn("fetchServices backend error", e);
   }
-  return getServices();
+  // Only return cached data if actor is null (offline mode). Empty array if actor failed.
+  return actor ? [] : getServices();
 }
 
 export async function backendAddService(
@@ -588,7 +589,8 @@ export async function fetchEmployees(
   } catch (e) {
     console.warn("fetchEmployees backend error", e);
   }
-  return getEmployees();
+  // Only return cached data if actor is null (offline mode). Empty array if actor failed.
+  return actor ? [] : getEmployees();
 }
 
 export async function backendAddEmployee(

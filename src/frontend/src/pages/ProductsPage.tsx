@@ -1,12 +1,14 @@
 import { Badge } from "@/components/ui/badge";
 import { useServices } from "@/hooks/useQueries";
-import { Link, useNavigate } from "@tanstack/react-router";
+import { useCart } from "@/lib/cartContext";
+import { Link } from "@tanstack/react-router";
 import { ArrowRight, PackageX, ShoppingCart, Tag } from "lucide-react";
 import { useEffect } from "react";
+import { toast } from "sonner";
 
 export default function ProductsPage() {
-  const navigate = useNavigate();
   const { data: services = [] } = useServices();
+  const { addToCart, totalItems } = useCart();
 
   useEffect(() => {
     document.title = "Services - ID&PC Chak";
@@ -30,6 +32,25 @@ export default function ProductsPage() {
           </p>
         </div>
 
+        {/* Floating cart bar */}
+        {totalItems > 0 && (
+          <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 animate-fade-in-up">
+            <Link to="/cart">
+              <button
+                type="button"
+                className="flex items-center gap-3 bg-brand-blue text-white font-bold px-6 py-3 rounded-full shadow-2xl hover:bg-brand-blue/90 transition-all btn-3d btn-3d-blue"
+                data-ocid="products.view_cart.button"
+              >
+                <ShoppingCart className="w-5 h-5" />
+                View Cart ({totalItems} item{totalItems !== 1 ? "s" : ""})
+                <span className="bg-brand-gold text-brand-blue text-xs font-bold px-2 py-0.5 rounded-full">
+                  {totalItems}
+                </span>
+              </button>
+            </Link>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
           {services.map((svc, i) => {
             const discountPct =
@@ -47,7 +68,7 @@ export default function ProductsPage() {
             const finalPrice =
               parsedPrice && discountPct > 0
                 ? Math.round(parsedPrice * (1 - discountPct / 100))
-                : null;
+                : parsedPrice;
 
             return (
               <Link
@@ -152,11 +173,15 @@ export default function ProductsPage() {
                         onClick={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
-                          navigate({
-                            to: "/products/$serviceId",
-                            params: { serviceId: svc.id },
+                          addToCart({
+                            serviceId: svc.id,
+                            serviceName: svc.name,
+                            price: finalPrice || parsedPrice || 0,
+                            imageUrl: svc.image || undefined,
                           });
+                          toast.success(`"${svc.name}" added to cart!`);
                         }}
+                        data-ocid={`products.cart_button.${i + 1}`}
                       >
                         <ShoppingCart className="w-4 h-4" />
                         Add to Cart
@@ -179,7 +204,7 @@ export default function ProductsPage() {
         )}
 
         {/* Call to action */}
-        <div className="mt-16 bg-brand-blue rounded-2xl p-8 text-center text-white">
+        <div className="mt-16 mb-12 bg-brand-blue rounded-2xl p-8 text-center text-white">
           <h2 className="font-heading font-bold text-2xl mb-2">
             Need a Custom Quote?
           </h2>

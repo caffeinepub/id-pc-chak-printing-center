@@ -1,7 +1,8 @@
 import { Button } from "@/components/ui/button";
 import { useLogo } from "@/hooks/useQueries";
+import { useCart } from "@/lib/cartContext";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
-import { Menu, User, X } from "lucide-react";
+import { Menu, ShoppingCart, User, X } from "lucide-react";
 import { useState } from "react";
 
 const navLinks = [
@@ -35,6 +36,7 @@ export default function Navbar() {
   const pathname = routerState.location.pathname;
   const navigate = useNavigate();
   const { data: logo } = useLogo();
+  const { totalItems } = useCart();
   // Derived directly from localStorage on each render (re-reads when pathname changes)
   const customerSession = getCustomerSession();
 
@@ -80,6 +82,21 @@ export default function Navbar() {
 
           {/* Right action buttons */}
           <div className="hidden md:flex items-center gap-3">
+            {/* Cart icon */}
+            <Link
+              to="/cart"
+              className="relative flex items-center justify-center w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 transition-colors text-white"
+              aria-label="View cart"
+              data-ocid="navbar.cart.button"
+            >
+              <ShoppingCart className="w-5 h-5" />
+              {totalItems > 0 && (
+                <span className="absolute -top-1 -right-1 w-4.5 h-4.5 min-w-[18px] min-h-[18px] rounded-full bg-brand-gold text-brand-blue text-[10px] font-bold flex items-center justify-center leading-none px-1">
+                  {totalItems}
+                </span>
+              )}
+            </Link>
+
             {customerSession ? (
               <Button
                 onClick={() => navigate({ to: "/customer/dashboard" })}
@@ -108,18 +125,34 @@ export default function Navbar() {
           </div>
 
           {/* Mobile hamburger */}
-          <button
-            type="button"
-            className="md:hidden text-white p-1"
-            onClick={() => setMenuOpen(!menuOpen)}
-            aria-label="Toggle menu"
-          >
-            {menuOpen ? (
-              <X className="w-6 h-6" />
-            ) : (
-              <Menu className="w-6 h-6" />
-            )}
-          </button>
+          <div className="md:hidden flex items-center gap-3">
+            {/* Mobile cart icon */}
+            <Link
+              to="/cart"
+              className="relative flex items-center justify-center w-8 h-8 rounded-full bg-white/10 text-white"
+              aria-label="View cart"
+              data-ocid="navbar.cart.button"
+            >
+              <ShoppingCart className="w-4 h-4" />
+              {totalItems > 0 && (
+                <span className="absolute -top-1 -right-1 min-w-[16px] min-h-[16px] rounded-full bg-brand-gold text-brand-blue text-[9px] font-bold flex items-center justify-center leading-none px-0.5">
+                  {totalItems}
+                </span>
+              )}
+            </Link>
+            <button
+              type="button"
+              className="text-white p-1"
+              onClick={() => setMenuOpen(!menuOpen)}
+              aria-label="Toggle menu"
+            >
+              {menuOpen ? (
+                <X className="w-6 h-6" />
+              ) : (
+                <Menu className="w-6 h-6" />
+              )}
+            </button>
+          </div>
         </div>
       </div>
 

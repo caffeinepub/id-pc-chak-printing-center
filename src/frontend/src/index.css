@@ -327,6 +327,10 @@
     padding: 0 !important;
     max-width: 100% !important;
   }
+  /* Report print: hide everything except print-report container */
+  .print-report ~ * {
+    display: none !important;
+  }
 }
 
 /* ============================================

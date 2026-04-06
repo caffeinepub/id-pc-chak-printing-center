@@ -90,7 +90,7 @@ export default function HomePage() {
               <Button
                 onClick={() => navigate({ to: "/contact" })}
                 variant="outline"
-                className="border-white text-white hover:bg-white/10 px-8 h-12 rounded-full text-base btn-3d"
+                className="border-white text-white hover:bg-white hover:text-brand-blue px-8 h-12 rounded-full text-base btn-3d"
                 data-ocid="hero.secondary_button"
               >
                 Contact Us

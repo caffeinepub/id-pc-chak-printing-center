@@ -80,7 +80,6 @@ export function useServices() {
     queryKey: ["services"],
     queryFn: () => fetchServices(actor),
     enabled: !isFetching,
-    initialData: getServices,
     staleTime: 0,
     refetchInterval: POLL_INTERVAL,
     refetchIntervalInBackground: true,
@@ -93,7 +92,6 @@ export function useEmployees() {
     queryKey: ["employees"],
     queryFn: () => fetchEmployees(actor),
     enabled: !isFetching,
-    initialData: getEmployees,
     staleTime: 0,
     refetchInterval: POLL_INTERVAL,
     refetchIntervalInBackground: true,
@@ -214,10 +212,6 @@ export function useCompanies() {
     queryKey: ["companies"],
     queryFn: () => fetchCompanies(actor),
     enabled: !isFetching,
-    initialData: () => {
-      const data = localStorage.getItem("idpc_companies");
-      return data ? JSON.parse(data) : [];
-    },
     staleTime: 0,
     refetchInterval: POLL_INTERVAL,
     refetchIntervalInBackground: true,

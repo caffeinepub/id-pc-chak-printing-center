@@ -816,12 +816,63 @@ export default function AdminDashboardPage() {
       !invoiceSearch ||
       inv.customerName.toLowerCase().includes(search) ||
       (inv.phone || "").toLowerCase().includes(search) ||
-      inv.id.toLowerCase().includes(search);
+      inv.id.toLowerCase().includes(search) ||
+      (inv.userId || "").toLowerCase().includes(search);
     const matchesPayment =
       invoicePaymentFilter === "all" ||
       (inv.paymentStatus || "unpaid") === invoicePaymentFilter;
     return matchesSearch && matchesPayment;
   });
+
+  function printCustomersList() {
+    const printWindow = window.open("", "_blank", "width=800,height=600");
+    if (!printWindow) return;
+    const rows = billingCustomers
+      .map((cust, i) => {
+        const custInvoices = invoices.filter(
+          (inv) => inv.customerName.toLowerCase() === cust.name.toLowerCase(),
+        );
+        return `<tr>
+        <td>${i + 1}</td>
+        <td>${cust.name}</td>
+        <td>${cust.phone || "—"}</td>
+        <td>${(cust as BillingCustomer).address || "—"}</td>
+        <td>${custInvoices.length}</td>
+      </tr>`;
+      })
+      .join("");
+
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Customers List - ID&amp;PC Chak</title>
+        <style>
+          body { font-family: Arial, sans-serif; padding: 20px; }
+          h1 { color: #1a3a6b; font-size: 20px; margin-bottom: 4px; }
+          p { color: #666; font-size: 12px; margin-bottom: 16px; }
+          table { width: 100%; border-collapse: collapse; font-size: 13px; }
+          th { background: #1a3a6b; color: white; padding: 10px 8px; text-align: left; }
+          td { padding: 8px; border-bottom: 1px solid #e5e7eb; }
+          tr:nth-child(even) { background: #f9fafb; }
+          .footer { margin-top: 20px; font-size: 11px; color: #999; text-align: center; }
+          @media print { body { padding: 0; } }
+        </style>
+      </head>
+      <body>
+        <h1>ID&amp;PC Chak — Customers List</h1>
+        <p>Total: ${billingCustomers.length} customers | Printed: ${new Date().toLocaleDateString()}</p>
+        <table>
+          <thead><tr><th>#</th><th>Name</th><th>Phone</th><th>Address</th><th>Invoices</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+        <div class="footer">Developed by GFXKamran — ID&amp;PC Chak Printing Center</div>
+        <script>window.onload = function() { window.print(); }<\/script>
+      </body>
+      </html>
+    `);
+    printWindow.document.close();
+  }
 
   const TABS: {
     key: Tab;
@@ -993,7 +1044,7 @@ export default function AdminDashboardPage() {
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                 <input
                   type="text"
-                  placeholder="Search by name, phone or invoice number..."
+                  placeholder="Search by name, phone, invoice # or user ID..."
                   value={invoiceSearch}
                   onChange={(e) => setInvoiceSearch(e.target.value)}
                   className="w-full pl-9 pr-4 py-2 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue/30"
@@ -1052,6 +1103,7 @@ export default function AdminDashboardPage() {
                   <table className="w-full">
                     <thead>
                       <tr className="bg-brand-blue text-white">
+                        <th className="text-left p-4">#</th>
                         <th className="text-left p-4">Invoice #</th>
                         <th className="text-left p-4">Customer</th>
                         <th className="text-left p-4">User ID</th>
@@ -1068,6 +1120,9 @@ export default function AdminDashboardPage() {
                           className="border-b border-border hover:bg-muted/40 transition-colors"
                           data-ocid={`admin.invoices.row.${i + 1}`}
                         >
+                          <td className="p-4 text-muted-foreground text-sm">
+                            {i + 1}
+                          </td>
                           <td className="p-4 font-semibold text-brand-blue">
                             {inv.id}
                           </td>
@@ -2346,14 +2401,24 @@ export default function AdminDashboardPage() {
 
         {/* ===== REPORTS TAB ===== */}
         {view === "list" && tab === "reports" && (
-          <div className="animate-fade-in">
-            <div className="mb-6">
-              <h1 className="font-heading font-bold text-2xl text-brand-blue">
-                Sales Reports
-              </h1>
-              <p className="text-muted-foreground text-sm">
-                View sales, profit, and performance data
-              </p>
+          <div className="animate-fade-in print-report">
+            <div className="mb-6 flex items-start justify-between gap-4">
+              <div>
+                <h1 className="font-heading font-bold text-2xl text-brand-blue">
+                  Sales Reports
+                </h1>
+                <p className="text-muted-foreground text-sm">
+                  View sales, profit, and performance data
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => window.print()}
+                className="no-print flex items-center gap-2 bg-brand-blue text-white font-semibold text-sm px-4 py-2 rounded-lg shadow hover:bg-brand-blue/90 transition-colors btn-3d btn-3d-blue flex-shrink-0"
+                data-ocid="admin.reports.print_button"
+              >
+                🖨️ Print Report
+              </button>
             </div>
             <div className="flex flex-wrap gap-3 mb-3">
               {REPORT_PERIODS.map((p) => (
@@ -2531,6 +2596,260 @@ export default function AdminDashboardPage() {
                     </Card>
                   )}
                 </>
+              );
+            })()}
+
+            {/* ===== PENDING PAYMENTS SECTION ===== */}
+            {(() => {
+              const pendingInvs = invoices.filter(
+                (inv) =>
+                  (inv.paymentStatus || "unpaid") === "unpaid" ||
+                  (inv.paymentStatus || "unpaid") === "partial",
+              );
+              const grouped: Record<
+                string,
+                {
+                  customerName: string;
+                  phone: string;
+                  invoiceIds: string[];
+                  totalOwed: number;
+                }
+              > = {};
+              for (const inv of pendingInvs) {
+                const key = inv.customerName || "Unknown";
+                if (!grouped[key]) {
+                  grouped[key] = {
+                    customerName: inv.customerName,
+                    phone: inv.phone || "",
+                    invoiceIds: [],
+                    totalOwed: 0,
+                  };
+                }
+                grouped[key].invoiceIds.push(inv.id);
+                grouped[key].totalOwed += inv.grandTotal;
+              }
+              const rows = Object.values(grouped).sort(
+                (a, b) => b.totalOwed - a.totalOwed,
+              );
+              return (
+                <div className="mt-8">
+                  <h2 className="font-heading font-bold text-xl text-brand-blue mb-3 flex items-center gap-2">
+                    ⚠️ Pending Payments
+                  </h2>
+                  {rows.length === 0 ? (
+                    <Card className="border-dashed border-2 mb-4">
+                      <CardContent className="p-6 text-center text-muted-foreground text-sm">
+                        No pending or partial payments. 🎉
+                      </CardContent>
+                    </Card>
+                  ) : (
+                    <Card className="border-2 border-brand-red/30 shadow-card mb-4">
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="bg-brand-red/10 border-b">
+                              <th className="text-left p-3 font-semibold">
+                                Customer
+                              </th>
+                              <th className="text-left p-3 font-semibold">
+                                Phone
+                              </th>
+                              <th className="text-left p-3 font-semibold">
+                                Invoice(s)
+                              </th>
+                              <th className="text-right p-3 font-semibold">
+                                Total Owed (Rs)
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {rows.map((row, i) => (
+                              <tr
+                                key={row.customerName}
+                                className="border-b border-border hover:bg-muted/30"
+                                data-ocid={`admin.reports.pending.row.${i + 1}`}
+                              >
+                                <td className="p-3 font-semibold text-brand-blue">
+                                  {row.customerName}
+                                </td>
+                                <td className="p-3 text-muted-foreground">
+                                  {row.phone || "—"}
+                                </td>
+                                <td className="p-3 text-muted-foreground text-xs">
+                                  {row.invoiceIds.join(", ")}
+                                </td>
+                                <td className="p-3 text-right font-bold text-brand-red">
+                                  {row.totalOwed.toLocaleString()}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                          <tfoot>
+                            <tr className="bg-brand-red/10 font-bold">
+                              <td
+                                colSpan={3}
+                                className="p-3 text-right text-brand-red"
+                              >
+                                Total Outstanding:
+                              </td>
+                              <td className="p-3 text-right text-brand-red">
+                                Rs{" "}
+                                {rows
+                                  .reduce((s, r) => s + r.totalOwed, 0)
+                                  .toLocaleString()}
+                              </td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
+                    </Card>
+                  )}
+                </div>
+              );
+            })()}
+
+            {/* ===== PROFIT PER CUSTOMER SECTION ===== */}
+            {(() => {
+              const { filtered } = calcReportData();
+              const custMap: Record<
+                string,
+                {
+                  customerName: string;
+                  phone: string;
+                  revenue: number;
+                  cost: number;
+                }
+              > = {};
+              for (const inv of filtered) {
+                const key = inv.customerName || "Unknown";
+                if (!custMap[key]) {
+                  custMap[key] = {
+                    customerName: inv.customerName,
+                    phone: inv.phone || "",
+                    revenue: 0,
+                    cost: 0,
+                  };
+                }
+                custMap[key].revenue += inv.grandTotal;
+                for (const item of inv.items) {
+                  if (item.billingItemId && item.billingItemId > 0) {
+                    const bi = billingItems.find(
+                      (b) => b.id === String(item.billingItemId),
+                    );
+                    if (bi)
+                      custMap[key].cost += bi.purchasePrice * item.quantity;
+                  }
+                }
+              }
+              const custRows = Object.values(custMap).sort(
+                (a, b) => b.revenue - b.cost - (a.revenue - a.cost),
+              );
+              if (custRows.length === 0) return null;
+              return (
+                <div className="mt-8">
+                  <h2 className="font-heading font-bold text-xl text-brand-blue mb-3">
+                    📊 Profit Per Customer
+                  </h2>
+                  <Card className="border-2 border-border shadow-card">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="bg-muted border-b">
+                            <th className="text-left p-3 font-semibold">
+                              Customer
+                            </th>
+                            <th className="text-left p-3 font-semibold">
+                              Phone
+                            </th>
+                            <th className="text-right p-3 font-semibold">
+                              Revenue (Rs)
+                            </th>
+                            <th className="text-right p-3 font-semibold">
+                              Cost (Rs)
+                            </th>
+                            <th className="text-right p-3 font-semibold">
+                              Profit (Rs)
+                            </th>
+                            <th className="text-right p-3 font-semibold">
+                              Margin %
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {custRows.map((row, i) => {
+                            const profit = row.revenue - row.cost;
+                            const margin =
+                              row.revenue > 0
+                                ? Math.round((profit / row.revenue) * 100)
+                                : 0;
+                            return (
+                              <tr
+                                key={row.customerName}
+                                className="border-b border-border hover:bg-muted/30"
+                                data-ocid={`admin.reports.profit.row.${i + 1}`}
+                              >
+                                <td className="p-3 font-semibold text-brand-blue">
+                                  {row.customerName}
+                                </td>
+                                <td className="p-3 text-muted-foreground">
+                                  {row.phone || "—"}
+                                </td>
+                                <td className="p-3 text-right font-bold text-brand-gold">
+                                  {row.revenue.toLocaleString()}
+                                </td>
+                                <td className="p-3 text-right text-muted-foreground">
+                                  {row.cost > 0
+                                    ? row.cost.toLocaleString()
+                                    : "N/A"}
+                                </td>
+                                <td
+                                  className={`p-3 text-right font-bold ${profit >= 0 ? "text-green-600" : "text-brand-red"}`}
+                                >
+                                  {profit.toLocaleString()}
+                                </td>
+                                <td
+                                  className={`p-3 text-right font-semibold ${margin >= 0 ? "text-green-600" : "text-brand-red"}`}
+                                >
+                                  {row.cost > 0 ? `${margin}%` : "—"}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                        <tfoot>
+                          <tr className="bg-brand-blue/10 font-bold">
+                            <td
+                              colSpan={2}
+                              className="p-3 text-right text-brand-blue"
+                            >
+                              Totals:
+                            </td>
+                            <td className="p-3 text-right text-brand-gold">
+                              Rs{" "}
+                              {custRows
+                                .reduce((s, r) => s + r.revenue, 0)
+                                .toLocaleString()}
+                            </td>
+                            <td className="p-3 text-right text-muted-foreground">
+                              {custRows.some((r) => r.cost > 0)
+                                ? `Rs ${custRows.reduce((s, r) => s + r.cost, 0).toLocaleString()}`
+                                : "N/A"}
+                            </td>
+                            <td
+                              className={`p-3 text-right font-bold ${custRows.reduce((s, r) => s + r.revenue - r.cost, 0) >= 0 ? "text-green-600" : "text-brand-red"}`}
+                            >
+                              Rs{" "}
+                              {custRows
+                                .reduce((s, r) => s + r.revenue - r.cost, 0)
+                                .toLocaleString()}
+                            </td>
+                            <td className="p-3" />
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+                  </Card>
+                </div>
               );
             })()}
           </div>
@@ -2941,6 +3260,23 @@ export default function AdminDashboardPage() {
                 <p className="text-muted-foreground text-sm">
                   {billingCustomers.length} saved customers
                 </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  onClick={printCustomersList}
+                  variant="outline"
+                  className="border-brand-blue text-brand-blue hover:bg-brand-blue hover:text-white"
+                  data-ocid="billing_customers.print_button"
+                >
+                  <Printer className="w-4 h-4 mr-2" /> Print List
+                </Button>
+                <Button
+                  onClick={printCustomersList}
+                  className="bg-brand-gold text-brand-blue hover:bg-brand-gold-dark font-semibold"
+                  data-ocid="billing_customers.download_button"
+                >
+                  <FileText className="w-4 h-4 mr-2" /> Download PDF
+                </Button>
               </div>
             </div>
             {/* Add customer form */}

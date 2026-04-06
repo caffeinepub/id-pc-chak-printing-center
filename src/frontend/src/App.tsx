@@ -1,11 +1,13 @@
 import Footer from "@/components/Footer";
 import Navbar from "@/components/Navbar";
 import { Toaster } from "@/components/ui/sonner";
+import { CartProvider } from "@/lib/cartContext";
 import { initStorage } from "@/lib/storage";
 import AboutPage from "@/pages/AboutPage";
 import AdminDashboardPage from "@/pages/AdminDashboardPage";
 import AdminLoginPage from "@/pages/AdminLoginPage";
 import BillCheckPage from "@/pages/BillCheckPage";
+import CartPage from "@/pages/CartPage";
 import ContactPage from "@/pages/ContactPage";
 import CustomerDashboardPage from "@/pages/CustomerDashboardPage";
 import CustomerLoginPage from "@/pages/CustomerLoginPage";
@@ -30,10 +32,10 @@ function RootLayout() {
   }, []);
 
   return (
-    <>
+    <CartProvider>
       <Toaster />
       <Outlet />
-    </>
+    </CartProvider>
   );
 }
 
@@ -89,6 +91,12 @@ const productDetailRoute = createRoute({
   component: PurchasePage,
 });
 
+const cartRoute = createRoute({
+  getParentRoute: () => publicLayoutRoute,
+  path: "/cart",
+  component: CartPage,
+});
+
 const billCheckRoute = createRoute({
   getParentRoute: () => publicLayoutRoute,
   path: "/bill-check",
@@ -132,6 +140,7 @@ const routeTree = rootRoute.addChildren([
     contactRoute,
     productsRoute,
     productDetailRoute,
+    cartRoute,
     billCheckRoute,
     customerDashboardRoute,
   ]),

@@ -13,6 +13,7 @@
  * Each image is compressed to ~30-50KB before storage to stay within ICP limits.
  */
 
+import { ExternalBlob } from "@/backend";
 import type {
   Invoice as BackendInvoice,
   CustomerAccount,
@@ -601,20 +602,17 @@ export async function backendAddEmployee(
 ): Promise<FEEmployee> {
   const id = BigInt(Date.now());
   const idStr = id.toString();
-  const newEmp: FEEmployee = { ...emp, id: idStr };
-  const current = getEmployees();
-  saveEmployees([...current, newEmp]);
 
+  // Compress photo in parallel with nothing (just prep)
   const compressedPhoto = emp.photo
     ? await compressImage(emp.photo, 250, 0.65)
     : "";
 
+  const newEmp: FEEmployee = { ...emp, id: idStr, photo: compressedPhoto };
+
   if (actor) {
     try {
-      const extData = await fetchExtendedData(actor);
-      extData.employeePhotos[idStr] = compressedPhoto;
-      await saveExtendedData(actor, extData);
-
+      // STEP 1: Save employee record to backend Map FIRST
       await actor.addEmployee({
         id,
         fullName: emp.fullName,
@@ -624,16 +622,13 @@ export async function backendAddEmployee(
         mobile: emp.mobile,
         bloodGroup: emp.bloodGroup,
         designation: emp.designation,
-        photo: {
-          getBytes: async () => new Uint8Array(0),
-          getDirectURL: () => "",
-          withUploadProgress: () => ({
-            getBytes: async () => new Uint8Array(0),
-            getDirectURL: () => "",
-            withUploadProgress: () => null as never,
-          }),
-        } as never,
+        photo: ExternalBlob.fromBytes(new Uint8Array(0)),
       });
+
+      // STEP 2: Save photo to extended data (employeesJson blob)
+      const extData = await fetchExtendedData(actor);
+      extData.employeePhotos[idStr] = compressedPhoto;
+      await saveExtendedData(actor, extData);
     } catch (e) {
       console.warn("backendAddEmployee error", e);
     }
@@ -643,26 +638,26 @@ export async function backendAddEmployee(
     saveLocalExtendedData(extData);
   }
 
-  return { ...newEmp, photo: compressedPhoto };
+  // Update local cache so UI reflects immediately on this device too
+  const current = getEmployees();
+  saveEmployees([...current, newEmp]);
+
+  return newEmp;
 }
 
 export async function backendUpdateEmployee(
   actor: backendInterface | null,
   emp: FEEmployee,
 ): Promise<void> {
-  const current = getEmployees();
-  saveEmployees(current.map((e) => (e.id === emp.id ? emp : e)));
-
   const compressedPhoto = emp.photo
     ? await compressImage(emp.photo, 250, 0.65)
     : "";
 
+  const updatedEmp: FEEmployee = { ...emp, photo: compressedPhoto };
+
   if (actor) {
     try {
-      const extData = await fetchExtendedData(actor);
-      extData.employeePhotos[emp.id] = compressedPhoto;
-      await saveExtendedData(actor, extData);
-
+      // STEP 1: Update employee record in backend Map FIRST
       await actor.updateEmployee(BigInt(emp.id), {
         id: BigInt(emp.id),
         fullName: emp.fullName,
@@ -672,16 +667,13 @@ export async function backendUpdateEmployee(
         mobile: emp.mobile,
         bloodGroup: emp.bloodGroup,
         designation: emp.designation,
-        photo: {
-          getBytes: async () => new Uint8Array(0),
-          getDirectURL: () => "",
-          withUploadProgress: () => ({
-            getBytes: async () => new Uint8Array(0),
-            getDirectURL: () => "",
-            withUploadProgress: () => null as never,
-          }),
-        } as never,
+        photo: ExternalBlob.fromBytes(new Uint8Array(0)),
       });
+
+      // STEP 2: Update photo in extended data
+      const extData = await fetchExtendedData(actor);
+      extData.employeePhotos[emp.id] = compressedPhoto;
+      await saveExtendedData(actor, extData);
     } catch (e) {
       console.warn("backendUpdateEmployee error", e);
     }
@@ -690,19 +682,25 @@ export async function backendUpdateEmployee(
     extData.employeePhotos[emp.id] = compressedPhoto;
     saveLocalExtendedData(extData);
   }
+
+  // Update local cache
+  const current = getEmployees();
+  saveEmployees(current.map((e) => (e.id === emp.id ? updatedEmp : e)));
 }
 
 export async function backendDeleteEmployee(
   actor: backendInterface | null,
   id: string,
 ): Promise<void> {
-  saveEmployees(getEmployees().filter((e) => e.id !== id));
   if (actor) {
     try {
+      // STEP 1: Delete employee record from backend Map FIRST
+      await actor.deleteEmployee(BigInt(id));
+
+      // STEP 2: Remove photo from extended data
       const extData = await fetchExtendedData(actor);
       delete extData.employeePhotos[id];
       await saveExtendedData(actor, extData);
-      await actor.deleteEmployee(BigInt(id));
     } catch (e) {
       console.warn("backendDeleteEmployee error", e);
     }
@@ -711,6 +709,9 @@ export async function backendDeleteEmployee(
     delete extData.employeePhotos[id];
     saveLocalExtendedData(extData);
   }
+
+  // Update local cache
+  saveEmployees(getEmployees().filter((e) => e.id !== id));
 }
 
 // -----------------------------------------------------------------------

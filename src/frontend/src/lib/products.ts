@@ -153,8 +153,12 @@ export async function migrateServicesToProducts(
 ): Promise<void> {
   if (!actor) return;
   try {
-    const done = await actor.getMigrationDone();
-    if (done) return;
+    const [done, existingProducts] = await Promise.all([
+      actor.getMigrationDone(),
+      actor.getAllProducts(),
+    ]);
+    // If migration was marked done but products are empty, force re-run
+    if (done && existingProducts.length > 0) return;
 
     const [services, servicesJsonRaw] = await Promise.all([
       actor.getAllServices(),

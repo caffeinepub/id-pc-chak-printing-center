@@ -388,7 +388,7 @@ actor {
 
   // ===== SERVICES CRUD =====
 
-  public shared func getAllServices() : async [Service] {
+  public query func getAllServices() : async [Service] {
     ensureServicesMigrated();
     servicesV2.values().toArray();
   };
@@ -420,7 +420,7 @@ actor {
 
   // ===== EMPLOYEES CRUD =====
 
-  public shared func getAllEmployees() : async [Employee] {
+  public query func getAllEmployees() : async [Employee] {
     ensureEmployeesMigrated();
     employeesV2.values().toArray();
   };

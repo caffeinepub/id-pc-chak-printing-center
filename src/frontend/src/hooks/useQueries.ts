@@ -35,6 +35,7 @@ import {
   getBillingCustomers,
   getBillingItems,
   getContactMessages,
+  getEmployees,
   getInvoices,
   getLogo,
   getOrders,
@@ -89,12 +90,12 @@ export function useServices() {
   });
 }
 
-// No initialData — backend is single source of truth for employees
 export function useEmployees() {
   const { actor, isFetching } = useActor();
   return useQuery({
     queryKey: ["employees"],
     queryFn: () => fetchEmployees(actor),
+    initialData: getEmployees,
     enabled: !isFetching && !!actor,
     staleTime: 0,
     refetchInterval: POLL_INTERVAL,

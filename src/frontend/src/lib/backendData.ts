@@ -573,8 +573,8 @@ export async function backendDeleteService(
 
 // -----------------------------------------------------------------------
 // Employees
-// FIXED: Removed localStorage fallback when backend returns empty.
-// Photos saved AFTER backend record to ensure ID exists before photo lookup.
+// FIX v36: Photos stored directly in photoUrl field on Employee record.
+// No more employeesJson blob — eliminates race conditions and ICP size limit issues.
 // -----------------------------------------------------------------------
 
 export async function fetchEmployees(
@@ -582,10 +582,7 @@ export async function fetchEmployees(
 ): Promise<FEEmployee[]> {
   try {
     if (actor) {
-      const [backendEmployees, extData] = await Promise.all([
-        actor.getAllEmployees(),
-        fetchExtendedData(actor),
-      ]);
+      const backendEmployees = await actor.getAllEmployees();
       const decoded = backendEmployees.map((e) => ({
         id: e.id.toString(),
         fullName: e.fullName,
@@ -595,11 +592,10 @@ export async function fetchEmployees(
         mobile: e.mobile,
         bloodGroup: e.bloodGroup,
         designation: e.designation,
-        photo: extData.employeePhotos[e.id.toString()] || "",
+        // Photo lives directly in photoUrl field — no separate blob needed
+        photo: e.photoUrl || "",
       }));
-      // FIX: Always return backend result — no localStorage fallback.
-      // Backend is single source of truth for employees.
-      // Also sync to localStorage so same-device updates work immediately.
+      // Sync to localStorage for initialData on next page load
       try {
         const { saveEmployees } = await import("./storage");
         saveEmployees(decoded);
@@ -610,8 +606,14 @@ export async function fetchEmployees(
     }
   } catch (e) {
     console.warn("fetchEmployees backend error", e);
+    // On error, return last known good data from localStorage
+    try {
+      const { getEmployees } = await import("./storage");
+      return getEmployees();
+    } catch {
+      /* ignore */
+    }
   }
-  // Return empty when actor unavailable — backend is the only source of truth
   return [];
 }
 
@@ -622,53 +624,37 @@ export async function backendAddEmployee(
   const id = BigInt(Date.now());
   const idStr = id.toString();
 
+  // Compress photo to a reasonable size (~30KB) for ICP message limits
   const compressedPhoto = emp.photo
-    ? await compressImage(emp.photo, 250, 0.65)
+    ? await compressImage(emp.photo, 200, 0.55)
     : "";
 
   const newEmp: FEEmployee = { ...emp, id: idStr, photo: compressedPhoto };
 
-  if (actor) {
-    try {
-      // STEP 1: Save employee record to backend Map FIRST
-      await actor.addEmployee({
-        id,
-        fullName: emp.fullName,
-        fatherName: emp.fatherName,
-        age: BigInt(Number.parseInt(emp.age) || 0),
-        cnic: emp.cnic,
-        mobile: emp.mobile,
-        bloodGroup: emp.bloodGroup,
-        designation: emp.designation,
-        photoUrl: "",
-      });
+  if (!actor) {
+    throw new Error("Not connected to backend. Please wait and try again.");
+  }
 
-      // STEP 2: Save photo directly to employeesJson (bypass full extData to avoid overwriting concurrent changes)
-      // Force-bust cache so we get fresh data from backend
-      _extDataCache = null;
-      _extDataCacheTime = 0;
-      const employeesRaw = await actor.getEmployeesJson().catch(() => "");
-      const employeesData = employeesRaw?.trim()
-        ? safeParseJson(employeesRaw)
-        : {};
-      const employeePhotos =
-        (employeesData.employeePhotos as Record<string, string>) || {};
-      employeePhotos[idStr] = compressedPhoto;
-      const newEmployeesChunk = JSON.stringify({ employeePhotos });
-      await actor.setEmployeesJson(newEmployeesChunk);
+  // Save employee record with photo stored directly in photoUrl
+  await actor.addEmployee({
+    id,
+    fullName: emp.fullName,
+    fatherName: emp.fatherName,
+    age: BigInt(Number.parseInt(emp.age) || 0),
+    cnic: emp.cnic,
+    mobile: emp.mobile,
+    bloodGroup: emp.bloodGroup,
+    designation: emp.designation,
+    photoUrl: compressedPhoto,
+  });
 
-      // Also update the in-memory cache's employee photos
-      if (_extDataCache) {
-        (_extDataCache as ExtendedData).employeePhotos[idStr] = compressedPhoto;
-      }
-    } catch (e) {
-      console.warn("backendAddEmployee error", e);
-      throw e;
-    }
-  } else {
-    const extData = getLocalExtendedData();
-    extData.employeePhotos[idStr] = compressedPhoto;
-    saveLocalExtendedData(extData);
+  // Sync to localStorage for immediate same-device feedback
+  try {
+    const { getEmployees, saveEmployees } = await import("./storage");
+    const current = getEmployees();
+    saveEmployees([...current, newEmp]);
+  } catch {
+    /* ignore */
   }
 
   return newEmp;
@@ -679,57 +665,34 @@ export async function backendUpdateEmployee(
   emp: FEEmployee,
 ): Promise<void> {
   const compressedPhoto = emp.photo
-    ? await compressImage(emp.photo, 250, 0.65)
+    ? await compressImage(emp.photo, 200, 0.55)
     : "";
 
   const updatedEmp: FEEmployee = { ...emp, photo: compressedPhoto };
 
-  if (actor) {
-    try {
-      // STEP 1: Update employee record in backend Map FIRST
-      await actor.updateEmployee(BigInt(emp.id), {
-        id: BigInt(emp.id),
-        fullName: emp.fullName,
-        fatherName: emp.fatherName,
-        age: BigInt(Number.parseInt(emp.age) || 0),
-        cnic: emp.cnic,
-        mobile: emp.mobile,
-        bloodGroup: emp.bloodGroup,
-        designation: emp.designation,
-        photoUrl: "",
-      });
-
-      // STEP 2: Update photo directly in employeesJson
-      const employeesRaw = await actor.getEmployeesJson().catch(() => "");
-      const employeesData = employeesRaw?.trim()
-        ? safeParseJson(employeesRaw)
-        : {};
-      const employeePhotos =
-        (employeesData.employeePhotos as Record<string, string>) || {};
-      employeePhotos[emp.id] = compressedPhoto;
-      const newEmployeesChunk = JSON.stringify({ employeePhotos });
-      await actor.setEmployeesJson(newEmployeesChunk);
-
-      // Update the in-memory cache
-      if (_extDataCache) {
-        (_extDataCache as ExtendedData).employeePhotos[emp.id] =
-          compressedPhoto;
-      }
-    } catch (e) {
-      console.warn("backendUpdateEmployee error", e);
-      throw e;
-    }
-  } else {
-    const extData = getLocalExtendedData();
-    extData.employeePhotos[emp.id] = compressedPhoto;
-    saveLocalExtendedData(extData);
+  if (!actor) {
+    throw new Error("Not connected to backend. Please wait and try again.");
   }
 
-  // Update local cache (for same-device immediate feedback)
-  const current = getEmployees();
-  if (current.length > 0) {
-    const { saveEmployees } = await import("./storage");
+  await actor.updateEmployee(BigInt(emp.id), {
+    id: BigInt(emp.id),
+    fullName: emp.fullName,
+    fatherName: emp.fatherName,
+    age: BigInt(Number.parseInt(emp.age) || 0),
+    cnic: emp.cnic,
+    mobile: emp.mobile,
+    bloodGroup: emp.bloodGroup,
+    designation: emp.designation,
+    photoUrl: compressedPhoto,
+  });
+
+  // Sync to localStorage
+  try {
+    const { getEmployees, saveEmployees } = await import("./storage");
+    const current = getEmployees();
     saveEmployees(current.map((e) => (e.id === emp.id ? updatedEmp : e)));
+  } catch {
+    /* ignore */
   }
 }
 
@@ -737,34 +700,18 @@ export async function backendDeleteEmployee(
   actor: backendInterface | null,
   id: string,
 ): Promise<void> {
-  if (actor) {
-    try {
-      // STEP 1: Delete employee record from backend Map FIRST
-      await actor.deleteEmployee(BigInt(id));
+  if (!actor) {
+    throw new Error("Not connected to backend. Please wait and try again.");
+  }
 
-      // STEP 2: Remove from employeesJson directly
-      const employeesRaw = await actor.getEmployeesJson().catch(() => "");
-      const employeesData = employeesRaw?.trim()
-        ? safeParseJson(employeesRaw)
-        : {};
-      const employeePhotos =
-        (employeesData.employeePhotos as Record<string, string>) || {};
-      delete employeePhotos[id];
-      const newEmployeesChunk = JSON.stringify({ employeePhotos });
-      await actor.setEmployeesJson(newEmployeesChunk);
+  await actor.deleteEmployee(BigInt(id));
 
-      // Update in-memory cache
-      if (_extDataCache) {
-        delete (_extDataCache as ExtendedData).employeePhotos[id];
-      }
-    } catch (e) {
-      console.warn("backendDeleteEmployee error", e);
-      throw e;
-    }
-  } else {
-    const extData = getLocalExtendedData();
-    delete extData.employeePhotos[id];
-    saveLocalExtendedData(extData);
+  // Sync to localStorage
+  try {
+    const { getEmployees, saveEmployees } = await import("./storage");
+    saveEmployees(getEmployees().filter((e) => e.id !== id));
+  } catch {
+    /* ignore */
   }
 }
 

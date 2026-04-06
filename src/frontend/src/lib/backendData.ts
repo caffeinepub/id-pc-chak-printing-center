@@ -414,8 +414,6 @@ export async function fetchServices(
         actor.getAllServices(),
         fetchExtendedData(actor),
       ]);
-      // BUG-001 FIX: Always use backend result when actor is available,
-      // even if array is empty. Only fall back if actor is null or call throws.
       const decoded = backendServices.map((s) => ({
         id: s.id.toString(),
         name: s.name,
@@ -426,14 +424,19 @@ export async function fetchServices(
         inStock: s.inStock,
         discount: Number(s.discount),
       }));
-      saveServices(decoded);
-      return decoded;
+      // If backend has data, use it. If empty, fallback to localStorage (data may only be in LS).
+      if (decoded.length > 0) {
+        saveServices(decoded);
+        return decoded;
+      }
+      // Backend empty — return localStorage data (admin may have saved locally only)
+      return getServices();
     }
   } catch (e) {
     console.warn("fetchServices backend error", e);
   }
-  // Only return cached data if actor is null (offline mode). Empty array if actor failed.
-  return actor ? [] : getServices();
+  // Fallback: use localStorage for both offline and error cases
+  return getServices();
 }
 
 export async function backendAddService(
@@ -570,8 +573,6 @@ export async function fetchEmployees(
         actor.getAllEmployees(),
         fetchExtendedData(actor),
       ]);
-      // BUG-001 FIX: Always use backend result when actor is available,
-      // even if array is empty.
       const decoded = backendEmployees.map((e) => ({
         id: e.id.toString(),
         fullName: e.fullName,
@@ -583,14 +584,18 @@ export async function fetchEmployees(
         designation: e.designation,
         photo: extData.employeePhotos[e.id.toString()] || "",
       }));
-      saveEmployees(decoded);
-      return decoded;
+      // If backend has data, use it. If empty, fallback to localStorage.
+      if (decoded.length > 0) {
+        saveEmployees(decoded);
+        return decoded;
+      }
+      return getEmployees();
     }
   } catch (e) {
     console.warn("fetchEmployees backend error", e);
   }
-  // Only return cached data if actor is null (offline mode). Empty array if actor failed.
-  return actor ? [] : getEmployees();
+  // Fallback: use localStorage for both offline and error cases
+  return getEmployees();
 }
 
 export async function backendAddEmployee(

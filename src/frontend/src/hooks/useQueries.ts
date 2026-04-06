@@ -35,7 +35,6 @@ import {
   getBillingCustomers,
   getBillingItems,
   getContactMessages,
-  getEmployees,
   getInvoices,
   getLogo,
   getOrders,
@@ -95,7 +94,8 @@ export function useEmployees() {
   return useQuery({
     queryKey: ["employees"],
     queryFn: () => fetchEmployees(actor),
-    initialData: getEmployees,
+    // No initialData — backend blob is single source of truth.
+    // localStorage initialData caused cross-device stale data issues.
     enabled: !isFetching && !!actor,
     staleTime: 0,
     refetchInterval: POLL_INTERVAL,

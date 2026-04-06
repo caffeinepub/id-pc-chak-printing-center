@@ -37,7 +37,6 @@ import {
   getBillingCustomers,
   getBillingItems,
   getContactMessages,
-  getEmployees,
   getInvoices,
   getLogo,
   getOrders,
@@ -573,17 +572,116 @@ export async function backendDeleteService(
 
 // -----------------------------------------------------------------------
 // Employees
-// FIX v36: Photos stored directly in photoUrl field on Employee record.
-// No more employeesJson blob — eliminates race conditions and ICP size limit issues.
+// ARCHITECTURE (v2 - blob-only): ALL employee data (text + photo) stored
+// in a single JSON blob via getEmployeesJson / setEmployeesJson.
+// Format: { employees: [ { id, fullName, fatherName, age, cnic, mobile,
+//                          bloodGroup, designation, photo } ] }
+// This eliminates the 2-step add (Map + blob) that caused race conditions
+// and silent failures. No calls to actor.addEmployee/updateEmployee/deleteEmployee.
+// Backwards-compat: if blob has old { employeePhotos } format, falls back
+// to actor.getAllEmployees() merge for one-time migration read.
 // -----------------------------------------------------------------------
 
 export async function fetchEmployees(
   actor: backendInterface | null,
 ): Promise<FEEmployee[]> {
+  if (!actor) return [];
   try {
-    if (actor) {
-      const backendEmployees = await actor.getAllEmployees();
-      const decoded = backendEmployees.map((e) => ({
+    const rawChunk = await actor.getEmployeesJson().catch(() => "");
+    const parsed = rawChunk?.trim() ? JSON.parse(rawChunk) : {};
+
+    // NEW FORMAT: blob has { employees: [...] }
+    if (Array.isArray(parsed.employees)) {
+      const employees: FEEmployee[] = parsed.employees.map(
+        (e: Record<string, string>) => ({
+          id: e.id,
+          fullName: e.fullName || "",
+          fatherName: e.fatherName || "",
+          age: e.age || "",
+          cnic: e.cnic || "",
+          mobile: e.mobile || "",
+          bloodGroup: e.bloodGroup || "",
+          designation: e.designation || "",
+          photo: e.photo || "",
+        }),
+      );
+      try {
+        const { saveEmployees } = await import("./storage");
+        saveEmployees(employees);
+      } catch {
+        /* ignore */
+      }
+      return employees;
+    }
+
+    // LEGACY FORMAT: blob has { employeePhotos: {...} } — one-time migration read
+    // Fetch text records from backend Map and merge photos from blob
+    const photoMap: Record<string, string> =
+      (parsed.employeePhotos as Record<string, string>) || {};
+    const backendEmployees = await actor.getAllEmployees().catch(() => []);
+    const merged: FEEmployee[] = backendEmployees.map((e) => ({
+      id: e.id.toString(),
+      fullName: e.fullName,
+      fatherName: e.fatherName,
+      age: e.age.toString(),
+      cnic: e.cnic,
+      mobile: e.mobile,
+      bloodGroup: e.bloodGroup,
+      designation: e.designation,
+      photo: photoMap[e.id.toString()] || e.photoUrl || "",
+    }));
+
+    // Migrate to new format immediately so next fetch uses blob-only path
+    if (merged.length > 0) {
+      try {
+        await actor.setEmployeesJson(JSON.stringify({ employees: merged }));
+      } catch {
+        /* ignore migration write error */
+      }
+    }
+
+    try {
+      const { saveEmployees } = await import("./storage");
+      saveEmployees(merged);
+    } catch {
+      /* ignore */
+    }
+    return merged;
+  } catch (e) {
+    console.warn("fetchEmployees backend error", e);
+    return [];
+  }
+}
+
+export async function backendAddEmployee(
+  actor: backendInterface | null,
+  emp: Omit<FEEmployee, "id">,
+): Promise<FEEmployee> {
+  if (!actor) {
+    throw new Error("Not connected to backend. Please wait and try again.");
+  }
+
+  const idStr = Date.now().toString();
+
+  // Aggressively compress photo: 120px max, 0.45 quality → ~10-20KB
+  const compressedPhoto = emp.photo
+    ? await compressImage(emp.photo, 120, 0.45)
+    : "";
+
+  const newEmp: FEEmployee = { ...emp, id: idStr, photo: compressedPhoto };
+
+  // SINGLE STEP: get blob → parse → push → save
+  const rawChunk = await actor.getEmployeesJson().catch(() => "");
+  let employees: FEEmployee[] = [];
+  try {
+    const parsed = rawChunk?.trim() ? JSON.parse(rawChunk) : {};
+    if (Array.isArray(parsed.employees)) {
+      employees = parsed.employees as FEEmployee[];
+    } else if (parsed.employeePhotos) {
+      // Legacy: migrate old records before adding
+      const photoMap: Record<string, string> = parsed.employeePhotos || {};
+      const backendEmployees = await actor.getAllEmployees().catch(() => []);
+      employees = backendEmployees.map((e) => ({
         id: e.id.toString(),
         fullName: e.fullName,
         fatherName: e.fatherName,
@@ -592,67 +690,20 @@ export async function fetchEmployees(
         mobile: e.mobile,
         bloodGroup: e.bloodGroup,
         designation: e.designation,
-        // Photo lives directly in photoUrl field — no separate blob needed
-        photo: e.photoUrl || "",
+        photo: photoMap[e.id.toString()] || e.photoUrl || "",
       }));
-      // Sync to localStorage for initialData on next page load
-      try {
-        const { saveEmployees } = await import("./storage");
-        saveEmployees(decoded);
-      } catch {
-        /* ignore */
-      }
-      return decoded;
     }
-  } catch (e) {
-    console.warn("fetchEmployees backend error", e);
-    // On error, return last known good data from localStorage
-    try {
-      const { getEmployees } = await import("./storage");
-      return getEmployees();
-    } catch {
-      /* ignore */
-    }
-  }
-  return [];
-}
-
-export async function backendAddEmployee(
-  actor: backendInterface | null,
-  emp: Omit<FEEmployee, "id">,
-): Promise<FEEmployee> {
-  const id = BigInt(Date.now());
-  const idStr = id.toString();
-
-  // Compress photo to a reasonable size (~30KB) for ICP message limits
-  const compressedPhoto = emp.photo
-    ? await compressImage(emp.photo, 200, 0.55)
-    : "";
-
-  const newEmp: FEEmployee = { ...emp, id: idStr, photo: compressedPhoto };
-
-  if (!actor) {
-    throw new Error("Not connected to backend. Please wait and try again.");
+  } catch {
+    employees = [];
   }
 
-  // Save employee record with photo stored directly in photoUrl
-  await actor.addEmployee({
-    id,
-    fullName: emp.fullName,
-    fatherName: emp.fatherName,
-    age: BigInt(Number.parseInt(emp.age) || 0),
-    cnic: emp.cnic,
-    mobile: emp.mobile,
-    bloodGroup: emp.bloodGroup,
-    designation: emp.designation,
-    photoUrl: compressedPhoto,
-  });
+  employees.push(newEmp);
+  await actor.setEmployeesJson(JSON.stringify({ employees }));
 
-  // Sync to localStorage for immediate same-device feedback
+  // Update local cache for immediate same-device feedback
   try {
-    const { getEmployees, saveEmployees } = await import("./storage");
-    const current = getEmployees();
-    saveEmployees([...current, newEmp]);
+    const { saveEmployees } = await import("./storage");
+    saveEmployees(employees);
   } catch {
     /* ignore */
   }
@@ -664,33 +715,40 @@ export async function backendUpdateEmployee(
   actor: backendInterface | null,
   emp: FEEmployee,
 ): Promise<void> {
-  const compressedPhoto = emp.photo
-    ? await compressImage(emp.photo, 200, 0.55)
-    : "";
-
-  const updatedEmp: FEEmployee = { ...emp, photo: compressedPhoto };
-
   if (!actor) {
     throw new Error("Not connected to backend. Please wait and try again.");
   }
 
-  await actor.updateEmployee(BigInt(emp.id), {
-    id: BigInt(emp.id),
-    fullName: emp.fullName,
-    fatherName: emp.fatherName,
-    age: BigInt(Number.parseInt(emp.age) || 0),
-    cnic: emp.cnic,
-    mobile: emp.mobile,
-    bloodGroup: emp.bloodGroup,
-    designation: emp.designation,
-    photoUrl: compressedPhoto,
-  });
+  // Compress photo
+  const compressedPhoto = emp.photo
+    ? await compressImage(emp.photo, 120, 0.45)
+    : "";
+  const updatedEmp: FEEmployee = { ...emp, photo: compressedPhoto };
 
-  // Sync to localStorage
+  // SINGLE STEP: get blob → parse → replace → save
+  const rawChunk = await actor.getEmployeesJson().catch(() => "");
+  let employees: FEEmployee[] = [];
   try {
-    const { getEmployees, saveEmployees } = await import("./storage");
-    const current = getEmployees();
-    saveEmployees(current.map((e) => (e.id === emp.id ? updatedEmp : e)));
+    const parsed = rawChunk?.trim() ? JSON.parse(rawChunk) : {};
+    if (Array.isArray(parsed.employees)) {
+      employees = parsed.employees as FEEmployee[];
+    }
+  } catch {
+    employees = [];
+  }
+
+  const idx = employees.findIndex((e) => e.id === emp.id);
+  if (idx >= 0) {
+    employees[idx] = updatedEmp;
+  } else {
+    employees.push(updatedEmp);
+  }
+  await actor.setEmployeesJson(JSON.stringify({ employees }));
+
+  // Sync to localStorage for immediate feedback
+  try {
+    const { saveEmployees } = await import("./storage");
+    saveEmployees(employees);
   } catch {
     /* ignore */
   }
@@ -704,12 +762,25 @@ export async function backendDeleteEmployee(
     throw new Error("Not connected to backend. Please wait and try again.");
   }
 
-  await actor.deleteEmployee(BigInt(id));
+  // SINGLE STEP: get blob → parse → filter → save
+  const rawChunk = await actor.getEmployeesJson().catch(() => "");
+  let employees: FEEmployee[] = [];
+  try {
+    const parsed = rawChunk?.trim() ? JSON.parse(rawChunk) : {};
+    if (Array.isArray(parsed.employees)) {
+      employees = parsed.employees as FEEmployee[];
+    }
+  } catch {
+    employees = [];
+  }
+
+  employees = employees.filter((e) => e.id !== id);
+  await actor.setEmployeesJson(JSON.stringify({ employees }));
 
   // Sync to localStorage
   try {
-    const { getEmployees, saveEmployees } = await import("./storage");
-    saveEmployees(getEmployees().filter((e) => e.id !== id));
+    const { saveEmployees } = await import("./storage");
+    saveEmployees(employees);
   } catch {
     /* ignore */
   }

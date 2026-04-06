@@ -628,10 +628,24 @@ export async function backendAddEmployee(
         photo: ExternalBlob.fromBytes(new Uint8Array(0)),
       });
 
-      // STEP 2: Save photo to extended data (employeesJson blob)
-      const extData = await fetchExtendedData(actor);
-      extData.employeePhotos[idStr] = compressedPhoto;
-      await saveExtendedData(actor, extData);
+      // STEP 2: Save photo directly to employeesJson (bypass full extData to avoid overwriting concurrent changes)
+      // Force-bust cache so we get fresh data from backend
+      _extDataCache = null;
+      _extDataCacheTime = 0;
+      const employeesRaw = await actor.getEmployeesJson().catch(() => "");
+      const employeesData = employeesRaw?.trim()
+        ? safeParseJson(employeesRaw)
+        : {};
+      const employeePhotos =
+        (employeesData.employeePhotos as Record<string, string>) || {};
+      employeePhotos[idStr] = compressedPhoto;
+      const newEmployeesChunk = JSON.stringify({ employeePhotos });
+      await actor.setEmployeesJson(newEmployeesChunk);
+
+      // Also update the in-memory cache's employee photos
+      if (_extDataCache) {
+        (_extDataCache as ExtendedData).employeePhotos[idStr] = compressedPhoto;
+      }
     } catch (e) {
       console.warn("backendAddEmployee error", e);
       throw e;
@@ -670,10 +684,22 @@ export async function backendUpdateEmployee(
         photo: ExternalBlob.fromBytes(new Uint8Array(0)),
       });
 
-      // STEP 2: Update photo in extended data
-      const extData = await fetchExtendedData(actor);
-      extData.employeePhotos[emp.id] = compressedPhoto;
-      await saveExtendedData(actor, extData);
+      // STEP 2: Update photo directly in employeesJson
+      const employeesRaw = await actor.getEmployeesJson().catch(() => "");
+      const employeesData = employeesRaw?.trim()
+        ? safeParseJson(employeesRaw)
+        : {};
+      const employeePhotos =
+        (employeesData.employeePhotos as Record<string, string>) || {};
+      employeePhotos[emp.id] = compressedPhoto;
+      const newEmployeesChunk = JSON.stringify({ employeePhotos });
+      await actor.setEmployeesJson(newEmployeesChunk);
+
+      // Update the in-memory cache
+      if (_extDataCache) {
+        (_extDataCache as ExtendedData).employeePhotos[emp.id] =
+          compressedPhoto;
+      }
     } catch (e) {
       console.warn("backendUpdateEmployee error", e);
       throw e;
@@ -701,10 +727,21 @@ export async function backendDeleteEmployee(
       // STEP 1: Delete employee record from backend Map FIRST
       await actor.deleteEmployee(BigInt(id));
 
-      // STEP 2: Remove photo from extended data
-      const extData = await fetchExtendedData(actor);
-      delete extData.employeePhotos[id];
-      await saveExtendedData(actor, extData);
+      // STEP 2: Remove from employeesJson directly
+      const employeesRaw = await actor.getEmployeesJson().catch(() => "");
+      const employeesData = employeesRaw?.trim()
+        ? safeParseJson(employeesRaw)
+        : {};
+      const employeePhotos =
+        (employeesData.employeePhotos as Record<string, string>) || {};
+      delete employeePhotos[id];
+      const newEmployeesChunk = JSON.stringify({ employeePhotos });
+      await actor.setEmployeesJson(newEmployeesChunk);
+
+      // Update in-memory cache
+      if (_extDataCache) {
+        delete (_extDataCache as ExtendedData).employeePhotos[id];
+      }
     } catch (e) {
       console.warn("backendDeleteEmployee error", e);
       throw e;

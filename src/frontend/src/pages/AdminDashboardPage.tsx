@@ -601,16 +601,24 @@ export default function AdminDashboardPage() {
 
   async function handleSaveEmployee(e: React.FormEvent) {
     e.preventDefault();
-    if (editingEmp) {
-      const updated = { ...empForm, id: editingEmp.id };
-      await backendUpdateEmployee(actor, updated);
-    } else {
-      await backendAddEmployee(actor, empForm);
+    try {
+      if (editingEmp) {
+        const updated = { ...empForm, id: editingEmp.id };
+        await backendUpdateEmployee(actor, updated);
+      } else {
+        await backendAddEmployee(actor, empForm);
+      }
+      setEmpForm(emptyEmp);
+      setEditingEmp(null);
+      if (empPhotoRef.current) empPhotoRef.current.value = "";
+      invalidate(["employees"]);
+      // Force refetch after 1s to pick up the newly saved photo
+      setTimeout(() => invalidate(["employees"]), 1000);
+      toast.success("Employee saved!");
+    } catch (err) {
+      console.error("handleSaveEmployee error", err);
+      toast.error("Failed to save employee. Please try again.");
     }
-    setEmpForm(emptyEmp);
-    setEditingEmp(null);
-    if (empPhotoRef.current) empPhotoRef.current.value = "";
-    invalidate(["employees"]);
   }
 
   function handleEditEmp(emp: Employee) {

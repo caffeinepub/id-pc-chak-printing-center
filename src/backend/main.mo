@@ -1,8 +1,8 @@
 import Map "mo:core/Map";
+import Iter "mo:core/Iter";
 import Runtime "mo:core/Runtime";
 import Nat "mo:core/Nat";
 import Time "mo:core/Time";
-import Iter "mo:core/Iter";
 import MixinStorage "blob-storage/Mixin";
 import Storage "blob-storage/Storage";
 
@@ -17,6 +17,17 @@ actor {
     rate : Nat;
     total : Nat;
     billingItemId : Nat;
+  };
+
+  type Product = {
+    id : Nat;
+    name : Text;
+    description : Text;
+    price : Text;
+    image : Text;
+    inStock : Bool;
+    discount : Nat;
+    createdAt : Int;
   };
 
   type Service = {
@@ -134,6 +145,7 @@ actor {
   var servicesJson : Text = "";  // Full services data with images as JSON
 
   var adminPassword : Text = "";
+  let products = Map.empty<Nat, Product>();
   let services = Map.empty<Nat, Service>();
   let employees = Map.empty<Nat, Employee>();
   let reviews = Map.empty<Nat, Review>();
@@ -144,6 +156,7 @@ actor {
   let billingCustomers = Map.empty<Nat, BillingCustomer>();
   let customers = Map.empty<Nat, CustomerAccount>();
   var aboutStats : ?AboutStats = null;
+  var migrationDone : Bool = false;
   var securityAnswers : SecurityAnswers = {
     answer1 = "";
     answer2 = "";
@@ -151,6 +164,44 @@ actor {
   };
 
   include MixinStorage();
+
+  // ===== NEW PRODUCT CRUD =====
+
+  public query ({ caller }) func getAllProducts() : async [Product] {
+    products.values().toArray();
+  };
+
+  public query ({ caller }) func getProductsCount() : async Nat {
+    products.size();
+  };
+
+  public shared ({ caller }) func addProduct(p : Product) : async () {
+    products.add(p.id, p);
+  };
+
+  public shared ({ caller }) func updateProduct(id : Nat, p : Product) : async Bool {
+    if (products.containsKey(id)) {
+      products.add(id, p);
+      true;
+    } else { false };
+  };
+
+  public shared ({ caller }) func deleteProduct(id : Nat) : async Bool {
+    if (products.containsKey(id)) {
+      products.remove(id);
+      true;
+    } else { false };
+  };
+
+  // ===== MIGRATION TRACKING =====
+
+  public query ({ caller }) func getMigrationDone() : async Bool {
+    migrationDone;
+  };
+
+  public shared ({ caller }) func setMigrationDone(v : Bool) : async () {
+    migrationDone := v;
+  };
 
   // ===== LOGO & PASSWORD =====
 
@@ -164,6 +215,7 @@ actor {
   public shared ({ caller }) func getAdminPassword() : async Text {
     adminPassword;
   };
+
   public shared ({ caller }) func setAdminPassword(v : Text) : async () {
     adminPassword := v;
   };

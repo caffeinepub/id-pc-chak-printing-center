@@ -1,9 +1,11 @@
 /**
  * useQueries.ts
  * React Query hooks for reading shared data from the ICP backend.
- * Uses localStorage as initial data / fallback.
  * All queries poll the backend every 5 seconds so admin changes
  * are reflected on the live site in near real-time across all devices.
+ *
+ * NOTE: initialData from localStorage removed for employees/services
+ * so that cross-device sync works correctly.
  */
 
 import {
@@ -32,16 +34,15 @@ import {
   getBannerImage,
   getBillingItems,
   getContactMessages,
-  getEmployees,
   getInvoices,
   getLogo,
   getOrders,
   getReviews,
-  getServices,
 } from "@/lib/storage";
 
 // Re-export types needed by consumers
 export type { FEBillingCustomer as BillingCustomer, Company };
+import { fetchProducts } from "@/lib/products";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useActor } from "./useActor";
 
@@ -74,26 +75,26 @@ export function useBannerImage() {
   });
 }
 
+// No initialData — backend is single source of truth for services
 export function useServices() {
   const { actor, isFetching } = useActor();
   return useQuery({
     queryKey: ["services"],
     queryFn: () => fetchServices(actor),
     enabled: !isFetching,
-    initialData: getServices,
     staleTime: 0,
     refetchInterval: POLL_INTERVAL,
     refetchIntervalInBackground: true,
   });
 }
 
+// No initialData — backend is single source of truth for employees
 export function useEmployees() {
   const { actor, isFetching } = useActor();
   return useQuery({
     queryKey: ["employees"],
     queryFn: () => fetchEmployees(actor),
     enabled: !isFetching,
-    initialData: getEmployees,
     staleTime: 0,
     refetchInterval: POLL_INTERVAL,
     refetchIntervalInBackground: true,
@@ -282,6 +283,18 @@ export function useVisionMission() {
     },
     staleTime: 0,
     refetchInterval: POLL_INTERVAL,
+    refetchIntervalInBackground: true,
+  });
+}
+
+export function useProducts() {
+  const { actor, isFetching } = useActor();
+  return useQuery({
+    queryKey: ["products"],
+    queryFn: () => fetchProducts(actor),
+    enabled: !isFetching,
+    staleTime: 0,
+    refetchInterval: 5_000,
     refetchIntervalInBackground: true,
   });
 }

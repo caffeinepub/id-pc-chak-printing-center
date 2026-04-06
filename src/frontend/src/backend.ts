@@ -111,6 +111,16 @@ export interface InvoiceItem {
     particular: string;
     quantity: string;
 }
+export interface Product {
+    id: bigint;
+    inStock: boolean;
+    name: string;
+    createdAt: bigint;
+    description: string;
+    discount: bigint;
+    image: string;
+    price: string;
+}
 export interface _CaffeineStorageRefillInformation {
     proposed_top_up_amount?: bigint;
 }
@@ -193,6 +203,10 @@ export interface Employee {
     mobile: string;
     photo: ExternalBlob;
 }
+export interface _CaffeineStorageRefillResult {
+    success?: boolean;
+    topped_up_amount?: bigint;
+}
 export interface Review {
     id: bigint;
     customerName: string;
@@ -200,10 +214,6 @@ export interface Review {
     review: string;
     date: string;
     rating: bigint;
-}
-export interface _CaffeineStorageRefillResult {
-    success?: boolean;
-    topped_up_amount?: bigint;
 }
 export interface backendInterface {
     _caffeineStorageBlobIsLive(hash: Uint8Array): Promise<boolean>;
@@ -218,6 +228,7 @@ export interface backendInterface {
     addCustomerOrder(o: CustomerOrder): Promise<void>;
     addEmployee(e: Employee): Promise<void>;
     addInvoice(inv: Invoice): Promise<void>;
+    addProduct(p: Product): Promise<void>;
     addReview(r: Review): Promise<void>;
     addService(s: Service): Promise<void>;
     deleteBillingCustomer(id: bigint): Promise<boolean>;
@@ -227,6 +238,7 @@ export interface backendInterface {
     deleteCustomerOrder(id: bigint): Promise<boolean>;
     deleteEmployee(id: bigint): Promise<boolean>;
     deleteInvoice(id: bigint): Promise<boolean>;
+    deleteProduct(id: bigint): Promise<boolean>;
     deleteReview(id: bigint): Promise<boolean>;
     deleteService(id: bigint): Promise<boolean>;
     getAboutStats(): Promise<AboutStats | null>;
@@ -238,6 +250,7 @@ export interface backendInterface {
     getAllCustomers(): Promise<Array<CustomerAccount>>;
     getAllEmployees(): Promise<Array<Employee>>;
     getAllInvoices(): Promise<Array<Invoice>>;
+    getAllProducts(): Promise<Array<Product>>;
     getAllReviews(): Promise<Array<Review>>;
     getAllServices(): Promise<Array<Service>>;
     getApprovedReviews(): Promise<Array<Review>>;
@@ -245,38 +258,42 @@ export interface backendInterface {
     getBillingCustomer(id: bigint): Promise<BillingCustomer | null>;
     getBillingItem(id: bigint): Promise<BillingItem | null>;
     getCompaniesJson(): Promise<string>;
-    getServicesJson(): Promise<string>;
-    getEmployeesJson(): Promise<string>;
     getContactMessage(id: bigint): Promise<ContactMessage | null>;
     getCustomerByEmail(email: string): Promise<CustomerAccount | null>;
-    getCustomerById(id: bigint): Promise<CustomerAccount>;
+    getCustomerById(id: bigint): Promise<CustomerAccount | null>;
     getCustomerOrder(id: bigint): Promise<CustomerOrder | null>;
     getEmployee(id: bigint): Promise<Employee | null>;
+    getEmployeesJson(): Promise<string>;
     getInvoice(id: bigint): Promise<Invoice | null>;
     getInvoicesByCustomerPhone(phone: string): Promise<Array<Invoice>>;
     getLogo(): Promise<string>;
+    getMigrationDone(): Promise<boolean>;
     getOrdersByCustomer(customerId: bigint): Promise<Array<CustomerOrder>>;
     getPendingReviews(): Promise<Array<Review>>;
+    getProductsCount(): Promise<bigint>;
     getReview(id: bigint): Promise<Review | null>;
     getSecurityAnswers(): Promise<SecurityAnswers>;
     getService(id: bigint): Promise<Service | null>;
+    getServicesJson(): Promise<string>;
     markContactMessageRead(id: bigint): Promise<boolean>;
     registerCustomer(c: CustomerAccount): Promise<void>;
     setAboutStats(stats: AboutStats): Promise<void>;
     setAdminPassword(v: string): Promise<void>;
     setBannerImage(v: string): Promise<void>;
     setCompaniesJson(v: string): Promise<void>;
-    setServicesJson(v: string): Promise<void>;
     setEmployeesJson(v: string): Promise<void>;
     setLogo(v: string): Promise<void>;
+    setMigrationDone(v: boolean): Promise<void>;
     setSecurityAnswers(s: SecurityAnswers): Promise<void>;
+    setServicesJson(v: string): Promise<void>;
     updateBillingCustomer(id: bigint, customer: BillingCustomer): Promise<boolean>;
     updateBillingItem(id: bigint, item: BillingItem): Promise<boolean>;
     updateCustomer(id: bigint, c: CustomerAccount): Promise<boolean>;
-    updateCustomerLastLogin(id: bigint): Promise<void>;
+    updateCustomerLastLogin(id: bigint): Promise<boolean>;
     updateCustomerOrder(id: bigint, o: CustomerOrder): Promise<boolean>;
     updateEmployee(id: bigint, e: Employee): Promise<boolean>;
     updateInvoice(id: bigint, inv: Invoice): Promise<boolean>;
+    updateProduct(id: bigint, p: Product): Promise<boolean>;
     updateReview(id: bigint, r: Review): Promise<boolean>;
     updateService(id: bigint, s: Service): Promise<boolean>;
 }
@@ -451,6 +468,20 @@ export class Backend implements backendInterface {
             return result;
         }
     }
+    async addProduct(arg0: Product): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.addProduct(arg0);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.addProduct(arg0);
+            return result;
+        }
+    }
     async addReview(arg0: Review): Promise<void> {
         if (this.processError) {
             try {
@@ -574,6 +605,20 @@ export class Backend implements backendInterface {
             }
         } else {
             const result = await this.actor.deleteInvoice(arg0);
+            return result;
+        }
+    }
+    async deleteProduct(arg0: bigint): Promise<boolean> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.deleteProduct(arg0);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.deleteProduct(arg0);
             return result;
         }
     }
@@ -731,6 +776,20 @@ export class Backend implements backendInterface {
             return result;
         }
     }
+    async getAllProducts(): Promise<Array<Product>> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.getAllProducts();
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.getAllProducts();
+            return result;
+        }
+    }
     async getAllReviews(): Promise<Array<Review>> {
         if (this.processError) {
             try {
@@ -829,34 +888,6 @@ export class Backend implements backendInterface {
             return result;
         }
     }
-    async getServicesJson(): Promise<string> {
-        if (this.processError) {
-            try {
-                const result = await this.actor.getServicesJson();
-                return result;
-            } catch (e) {
-                this.processError(e);
-                throw new Error("unreachable");
-            }
-        } else {
-            const result = await this.actor.getServicesJson();
-            return result;
-        }
-    }
-    async getEmployeesJson(): Promise<string> {
-        if (this.processError) {
-            try {
-                const result = await this.actor.getEmployeesJson();
-                return result;
-            } catch (e) {
-                this.processError(e);
-                throw new Error("unreachable");
-            }
-        } else {
-            const result = await this.actor.getEmployeesJson();
-            return result;
-        }
-    }
     async getContactMessage(arg0: bigint): Promise<ContactMessage | null> {
         if (this.processError) {
             try {
@@ -885,18 +916,18 @@ export class Backend implements backendInterface {
             return from_candid_opt_n29(this._uploadFile, this._downloadFile, result);
         }
     }
-    async getCustomerById(arg0: bigint): Promise<CustomerAccount> {
+    async getCustomerById(arg0: bigint): Promise<CustomerAccount | null> {
         if (this.processError) {
             try {
                 const result = await this.actor.getCustomerById(arg0);
-                return result;
+                return from_candid_opt_n29(this._uploadFile, this._downloadFile, result);
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
             const result = await this.actor.getCustomerById(arg0);
-            return result;
+            return from_candid_opt_n29(this._uploadFile, this._downloadFile, result);
         }
     }
     async getCustomerOrder(arg0: bigint): Promise<CustomerOrder | null> {
@@ -925,6 +956,20 @@ export class Backend implements backendInterface {
         } else {
             const result = await this.actor.getEmployee(arg0);
             return from_candid_opt_n31(this._uploadFile, this._downloadFile, result);
+        }
+    }
+    async getEmployeesJson(): Promise<string> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.getEmployeesJson();
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.getEmployeesJson();
+            return result;
         }
     }
     async getInvoice(arg0: bigint): Promise<Invoice | null> {
@@ -969,6 +1014,20 @@ export class Backend implements backendInterface {
             return result;
         }
     }
+    async getMigrationDone(): Promise<boolean> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.getMigrationDone();
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.getMigrationDone();
+            return result;
+        }
+    }
     async getOrdersByCustomer(arg0: bigint): Promise<Array<CustomerOrder>> {
         if (this.processError) {
             try {
@@ -994,6 +1053,20 @@ export class Backend implements backendInterface {
             }
         } else {
             const result = await this.actor.getPendingReviews();
+            return result;
+        }
+    }
+    async getProductsCount(): Promise<bigint> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.getProductsCount();
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.getProductsCount();
             return result;
         }
     }
@@ -1037,6 +1110,20 @@ export class Backend implements backendInterface {
         } else {
             const result = await this.actor.getService(arg0);
             return from_candid_opt_n34(this._uploadFile, this._downloadFile, result);
+        }
+    }
+    async getServicesJson(): Promise<string> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.getServicesJson();
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.getServicesJson();
+            return result;
         }
     }
     async markContactMessageRead(arg0: bigint): Promise<boolean> {
@@ -1123,20 +1210,6 @@ export class Backend implements backendInterface {
             return result;
         }
     }
-    async setServicesJson(arg0: string): Promise<void> {
-        if (this.processError) {
-            try {
-                const result = await this.actor.setServicesJson(arg0);
-                return result;
-            } catch (e) {
-                this.processError(e);
-                throw new Error("unreachable");
-            }
-        } else {
-            const result = await this.actor.setServicesJson(arg0);
-            return result;
-        }
-    }
     async setEmployeesJson(arg0: string): Promise<void> {
         if (this.processError) {
             try {
@@ -1165,6 +1238,20 @@ export class Backend implements backendInterface {
             return result;
         }
     }
+    async setMigrationDone(arg0: boolean): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.setMigrationDone(arg0);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.setMigrationDone(arg0);
+            return result;
+        }
+    }
     async setSecurityAnswers(arg0: SecurityAnswers): Promise<void> {
         if (this.processError) {
             try {
@@ -1176,6 +1263,20 @@ export class Backend implements backendInterface {
             }
         } else {
             const result = await this.actor.setSecurityAnswers(arg0);
+            return result;
+        }
+    }
+    async setServicesJson(arg0: string): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.setServicesJson(arg0);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.setServicesJson(arg0);
             return result;
         }
     }
@@ -1221,7 +1322,7 @@ export class Backend implements backendInterface {
             return result;
         }
     }
-    async updateCustomerLastLogin(arg0: bigint): Promise<void> {
+    async updateCustomerLastLogin(arg0: bigint): Promise<boolean> {
         if (this.processError) {
             try {
                 const result = await this.actor.updateCustomerLastLogin(arg0);
@@ -1274,6 +1375,20 @@ export class Backend implements backendInterface {
             }
         } else {
             const result = await this.actor.updateInvoice(arg0, arg1);
+            return result;
+        }
+    }
+    async updateProduct(arg0: bigint, arg1: Product): Promise<boolean> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.updateProduct(arg0, arg1);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.updateProduct(arg0, arg1);
             return result;
         }
     }

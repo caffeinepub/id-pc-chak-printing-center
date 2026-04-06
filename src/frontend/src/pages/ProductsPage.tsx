@@ -1,5 +1,5 @@
 import { Badge } from "@/components/ui/badge";
-import { useServices } from "@/hooks/useQueries";
+import { useProducts } from "@/hooks/useQueries";
 import { useCart } from "@/lib/cartContext";
 import { Link } from "@tanstack/react-router";
 import { ArrowRight, PackageX, ShoppingCart, Tag } from "lucide-react";
@@ -7,7 +7,7 @@ import { useEffect } from "react";
 import { toast } from "sonner";
 
 export default function ProductsPage() {
-  const { data: services = [] } = useServices();
+  const { data: products = [] } = useProducts();
   const { addToCart, totalItems } = useCart();
 
   useEffect(() => {
@@ -26,7 +26,7 @@ export default function ProductsPage() {
             All Services
           </h1>
           <p className="text-muted-foreground max-w-xl mx-auto">
-            We offer {services.length > 0 ? `${services.length}+` : "15+"}{" "}
+            We offer {products.length > 0 ? `${products.length}+` : "15+"}{" "}
             professional printing and designing services. Click any service to
             view details and place an order.
           </p>
@@ -52,15 +52,15 @@ export default function ProductsPage() {
         )}
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          {services.map((svc, i) => {
+          {products.map((product, i) => {
             const discountPct =
-              svc.discount && svc.discount > 0 ? svc.discount : 0;
-            const isInStock = svc.inStock !== false;
+              product.discount && product.discount > 0 ? product.discount : 0;
+            const isInStock = product.inStock !== false;
 
             // Parse numeric price for discount calculation
-            const parsedPrice = svc.price
+            const parsedPrice = product.price
               ? (() => {
-                  const match = svc.price.match(/[\d,]+/);
+                  const match = product.price.match(/[\d,]+/);
                   if (!match) return null;
                   return Number.parseInt(match[0].replace(/,/g, ""), 10);
                 })()
@@ -72,9 +72,9 @@ export default function ProductsPage() {
 
             return (
               <Link
-                key={svc.id}
+                key={product.id}
                 to="/products/$serviceId"
-                params={{ serviceId: svc.id }}
+                params={{ serviceId: product.id }}
                 className="block group"
                 data-ocid={`products.item.${i + 1}`}
               >
@@ -106,11 +106,11 @@ export default function ProductsPage() {
                   </div>
 
                   {/* Image area */}
-                  {svc.image ? (
+                  {product.image ? (
                     <div className="relative overflow-hidden h-44">
                       <img
-                        src={svc.image}
-                        alt={svc.name}
+                        src={product.image}
+                        alt={product.name}
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                       />
                       <div className="absolute inset-0 bg-gradient-to-t from-black/30 to-transparent" />
@@ -118,7 +118,7 @@ export default function ProductsPage() {
                   ) : (
                     <div className="h-32 bg-gradient-to-br from-brand-blue/10 to-brand-gold/10 flex items-center justify-center">
                       <span className="text-5xl group-hover:scale-110 transition-transform duration-300">
-                        {svc.icon}
+                        🖨️
                       </span>
                     </div>
                   )}
@@ -126,12 +126,12 @@ export default function ProductsPage() {
                   {/* Content area */}
                   <div className="p-5">
                     <h3 className="font-heading font-bold text-lg text-brand-blue leading-tight mb-3">
-                      {svc.name}
+                      {product.name}
                     </h3>
 
                     {/* Price block */}
                     <div className="space-y-1 mb-4">
-                      {svc.price && (
+                      {product.price && (
                         <div className="flex items-center gap-2 flex-wrap">
                           {discountPct > 0 && parsedPrice ? (
                             <>
@@ -144,7 +144,7 @@ export default function ProductsPage() {
                             </>
                           ) : (
                             <span className="inline-flex items-center gap-1 bg-brand-gold/10 text-brand-gold border border-brand-gold/30 px-3 py-1 rounded-full text-sm font-bold">
-                              <Tag className="w-3 h-3" /> {svc.price}
+                              <Tag className="w-3 h-3" /> {product.price}
                             </span>
                           )}
                         </div>
@@ -174,12 +174,12 @@ export default function ProductsPage() {
                           e.preventDefault();
                           e.stopPropagation();
                           addToCart({
-                            serviceId: svc.id,
-                            serviceName: svc.name,
+                            serviceId: product.id,
+                            serviceName: product.name,
                             price: finalPrice || parsedPrice || 0,
-                            imageUrl: svc.image || undefined,
+                            imageUrl: product.image || undefined,
                           });
-                          toast.success(`"${svc.name}" added to cart!`);
+                          toast.success(`"${product.name}" added to cart!`);
                         }}
                         data-ocid={`products.cart_button.${i + 1}`}
                       >
@@ -194,7 +194,7 @@ export default function ProductsPage() {
           })}
         </div>
 
-        {services.length === 0 && (
+        {products.length === 0 && (
           <div
             className="text-center py-16 text-muted-foreground"
             data-ocid="products.empty_state"

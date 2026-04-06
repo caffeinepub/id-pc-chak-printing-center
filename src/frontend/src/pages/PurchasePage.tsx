@@ -7,7 +7,7 @@ import { useActor } from "@/hooks/useActor";
 import {
   useApprovedReviews,
   useInvalidate,
-  useServices,
+  useProducts,
 } from "@/hooks/useQueries";
 import { backendAddOrder, backendAddReview } from "@/lib/backendData";
 import { getReviews, saveReviews } from "@/lib/storage";
@@ -26,7 +26,7 @@ import { toast } from "sonner";
 
 export default function PurchasePage() {
   const { serviceId } = useParams({ from: "/public/products/$serviceId" });
-  const { data: services = [] } = useServices();
+  const { data: products = [] } = useProducts();
   const { data: approvedReviews = [] } = useApprovedReviews();
   const { actor } = useActor();
   const invalidate = useInvalidate();
@@ -46,7 +46,7 @@ export default function PurchasePage() {
   const [submittingReview, setSubmittingReview] = useState(false);
   const [reviewSubmitted, setReviewSubmitted] = useState(false);
 
-  const svc = services.find((s) => s.id === serviceId);
+  const svc = products.find((s) => s.id === serviceId);
 
   useEffect(() => {
     document.title = svc ? `${svc.name} - ID&PC Chak` : "Order - ID&PC Chak";
@@ -205,7 +205,7 @@ export default function PurchasePage() {
             </div>
           ) : (
             <div className="bg-gradient-to-br from-brand-blue/10 to-brand-gold/10 p-8 text-center">
-              <span className="text-7xl block mb-2">{svc.icon}</span>
+              <span className="text-7xl block mb-2">🖨️</span>
               <div className="flex justify-center gap-2">
                 <span
                   className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold ${

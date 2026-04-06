@@ -584,18 +584,15 @@ export async function fetchEmployees(
         designation: e.designation,
         photo: extData.employeePhotos[e.id.toString()] || "",
       }));
-      // If backend has data, use it. If empty, fallback to localStorage.
-      if (decoded.length > 0) {
-        saveEmployees(decoded);
-        return decoded;
-      }
-      return getEmployees();
+      // Always use backend as source of truth - no localStorage fallback
+      saveEmployees(decoded);
+      return decoded;
     }
   } catch (e) {
     console.warn("fetchEmployees backend error", e);
   }
-  // Fallback: use localStorage for both offline and error cases
-  return getEmployees();
+  // Only return empty array when no actor - backend is the only source of truth
+  return [];
 }
 
 export async function backendAddEmployee(

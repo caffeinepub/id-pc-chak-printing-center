@@ -36,6 +36,16 @@ export interface InvoiceItem {
     particular: string;
     quantity: string;
 }
+export interface Product {
+    id: bigint;
+    inStock: boolean;
+    name: string;
+    createdAt: bigint;
+    description: string;
+    discount: bigint;
+    image: string;
+    price: string;
+}
 export interface Service {
     id: bigint;
     inStock: boolean;
@@ -126,6 +136,7 @@ export interface backendInterface {
     addCustomerOrder(o: CustomerOrder): Promise<void>;
     addEmployee(e: Employee): Promise<void>;
     addInvoice(inv: Invoice): Promise<void>;
+    addProduct(p: Product): Promise<void>;
     addReview(r: Review): Promise<void>;
     addService(s: Service): Promise<void>;
     deleteBillingCustomer(id: bigint): Promise<boolean>;
@@ -135,6 +146,7 @@ export interface backendInterface {
     deleteCustomerOrder(id: bigint): Promise<boolean>;
     deleteEmployee(id: bigint): Promise<boolean>;
     deleteInvoice(id: bigint): Promise<boolean>;
+    deleteProduct(id: bigint): Promise<boolean>;
     deleteReview(id: bigint): Promise<boolean>;
     deleteService(id: bigint): Promise<boolean>;
     getAboutStats(): Promise<AboutStats | null>;
@@ -146,6 +158,7 @@ export interface backendInterface {
     getAllCustomers(): Promise<Array<CustomerAccount>>;
     getAllEmployees(): Promise<Array<Employee>>;
     getAllInvoices(): Promise<Array<Invoice>>;
+    getAllProducts(): Promise<Array<Product>>;
     getAllReviews(): Promise<Array<Review>>;
     getAllServices(): Promise<Array<Service>>;
     getApprovedReviews(): Promise<Array<Review>>;
@@ -153,31 +166,34 @@ export interface backendInterface {
     getBillingCustomer(id: bigint): Promise<BillingCustomer | null>;
     getBillingItem(id: bigint): Promise<BillingItem | null>;
     getCompaniesJson(): Promise<string>;
-    getServicesJson(): Promise<string>;
-    getEmployeesJson(): Promise<string>;
     getContactMessage(id: bigint): Promise<ContactMessage | null>;
     getCustomerByEmail(email: string): Promise<CustomerAccount | null>;
     getCustomerById(id: bigint): Promise<CustomerAccount | null>;
     getCustomerOrder(id: bigint): Promise<CustomerOrder | null>;
     getEmployee(id: bigint): Promise<Employee | null>;
+    getEmployeesJson(): Promise<string>;
     getInvoice(id: bigint): Promise<Invoice | null>;
     getInvoicesByCustomerPhone(phone: string): Promise<Array<Invoice>>;
     getLogo(): Promise<string>;
+    getMigrationDone(): Promise<boolean>;
     getOrdersByCustomer(customerId: bigint): Promise<Array<CustomerOrder>>;
     getPendingReviews(): Promise<Array<Review>>;
+    getProductsCount(): Promise<bigint>;
     getReview(id: bigint): Promise<Review | null>;
     getSecurityAnswers(): Promise<SecurityAnswers>;
     getService(id: bigint): Promise<Service | null>;
+    getServicesJson(): Promise<string>;
     markContactMessageRead(id: bigint): Promise<boolean>;
     registerCustomer(c: CustomerAccount): Promise<void>;
     setAboutStats(stats: AboutStats): Promise<void>;
     setAdminPassword(v: string): Promise<void>;
     setBannerImage(v: string): Promise<void>;
     setCompaniesJson(v: string): Promise<void>;
-    setServicesJson(v: string): Promise<void>;
     setEmployeesJson(v: string): Promise<void>;
     setLogo(v: string): Promise<void>;
+    setMigrationDone(v: boolean): Promise<void>;
     setSecurityAnswers(s: SecurityAnswers): Promise<void>;
+    setServicesJson(v: string): Promise<void>;
     updateBillingCustomer(id: bigint, customer: BillingCustomer): Promise<boolean>;
     updateBillingItem(id: bigint, item: BillingItem): Promise<boolean>;
     updateCustomer(id: bigint, c: CustomerAccount): Promise<boolean>;
@@ -185,6 +201,7 @@ export interface backendInterface {
     updateCustomerOrder(id: bigint, o: CustomerOrder): Promise<boolean>;
     updateEmployee(id: bigint, e: Employee): Promise<boolean>;
     updateInvoice(id: bigint, inv: Invoice): Promise<boolean>;
+    updateProduct(id: bigint, p: Product): Promise<boolean>;
     updateReview(id: bigint, r: Review): Promise<boolean>;
     updateService(id: bigint, s: Service): Promise<boolean>;
 }

@@ -6,7 +6,7 @@ import {
   useEmployees,
   useGallery,
   useLogo,
-  useServices,
+  useProducts,
   useVisionMission,
 } from "@/hooks/useQueries";
 import { Link, useNavigate } from "@tanstack/react-router";
@@ -31,8 +31,8 @@ export default function HomePage() {
   const { data: gallery = [] } = useGallery();
   const { data: visionMission = { vision: "", mission: "" } } =
     useVisionMission();
-  // BUG-011: Load services for the homepage services section
-  const { data: services = [] } = useServices();
+  // Load products for the homepage products section
+  const { data: products = [] } = useProducts();
 
   useEffect(() => {
     document.title = "ID&PC Chak - Ihsan Designing & Printing Center";
@@ -107,6 +107,14 @@ export default function HomePage() {
                   </span>
                 </div>
               )}
+              {products.length > 0 && (
+                <div className="glass flex items-center gap-2 text-white/90 px-4 py-2 rounded-full">
+                  <Tag className="w-5 h-5 text-brand-gold" />
+                  <span className="font-semibold text-sm">
+                    {products.length}+ Services
+                  </span>
+                </div>
+              )}
               <div className="glass flex items-center gap-2 text-white/90 px-4 py-2 rounded-full">
                 <Star className="w-5 h-5 text-brand-gold fill-brand-gold" />
                 <span className="font-semibold text-sm">Since 2015</span>
@@ -131,7 +139,7 @@ export default function HomePage() {
             <Card className="border-2 border-brand-blue-mid shadow-card card-3d">
               <CardContent className="p-8">
                 <h3 className="font-heading font-bold text-xl text-brand-blue mb-4 flex items-center gap-2">
-                  <span className="text-2xl">👁️</span> Our Vision
+                  <span className="text-2xl">&#128065;&#65039;</span> Our Vision
                 </h3>
                 <p className="text-muted-foreground leading-relaxed">
                   {visionMission.vision ||
@@ -142,7 +150,7 @@ export default function HomePage() {
             <Card className="border-2 border-brand-gold/40 shadow-card card-3d">
               <CardContent className="p-8">
                 <h3 className="font-heading font-bold text-xl text-brand-blue mb-4 flex items-center gap-2">
-                  <span className="text-2xl">🎯</span> Our Mission
+                  <span className="text-2xl">&#127919;</span> Our Mission
                 </h3>
                 <p className="text-muted-foreground leading-relaxed">
                   {visionMission.mission ||
@@ -154,8 +162,8 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* BUG-011 FIX: Dynamic Services Section */}
-      {services.length > 0 && (
+      {/* Products Section */}
+      {products.length > 0 && (
         <section className="py-20 bg-muted/30">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="text-center mb-12">
@@ -166,11 +174,11 @@ export default function HomePage() {
                 Our Services
               </h2>
               <p className="text-muted-foreground mt-2">
-                {services.length}+ professional printing and designing services
+                {products.length}+ professional printing and designing services
               </p>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-              {services.slice(0, 6).map((svc, i) => {
+              {products.slice(0, 6).map((svc, i) => {
                 const discountPct =
                   svc.discount && svc.discount > 0 ? svc.discount : 0;
                 const parsedPrice = svc.price
@@ -202,7 +210,7 @@ export default function HomePage() {
                               className="w-12 h-12 rounded-lg object-cover"
                             />
                           ) : (
-                            <span className="text-3xl">{svc.icon}</span>
+                            <span className="text-3xl">&#128424;&#65039;</span>
                           )}
                           <div className="flex-1 min-w-0">
                             <h3 className="font-heading font-bold text-sm text-brand-blue leading-tight">
@@ -244,14 +252,14 @@ export default function HomePage() {
                 );
               })}
             </div>
-            {services.length > 6 && (
+            {products.length > 6 && (
               <div className="text-center mt-8">
                 <Link to="/products">
                   <Button
                     className="bg-brand-blue text-white hover:bg-brand-blue-dark font-semibold px-8 btn-3d btn-3d-blue"
                     data-ocid="home.services.primary_button"
                   >
-                    View All {services.length} Services{" "}
+                    View All {products.length} Services{" "}
                     <ArrowRight className="w-4 h-4 ml-2" />
                   </Button>
                 </Link>
@@ -261,7 +269,7 @@ export default function HomePage() {
         </section>
       )}
 
-      {/* Gallery Section — only shown when images uploaded */}
+      {/* Gallery Section -- only shown when images uploaded */}
       {gallery.length > 0 && (
         <section className="py-20 bg-muted/50">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -343,7 +351,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* Reviews Section — BUG-010 FIX: only approved reviews */}
+      {/* Reviews Section -- BUG-010 FIX: only approved reviews */}
       {reviews.length > 0 && (
         <section className="py-20 bg-background">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">

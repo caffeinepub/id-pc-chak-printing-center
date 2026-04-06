@@ -20,7 +20,7 @@ import {
   useLogo,
   useOrders,
   usePendingReviews,
-  useServices,
+  useProducts,
   useVisionMission,
 } from "@/hooks/useQueries";
 import {
@@ -29,7 +29,6 @@ import {
   backendAddEmployee,
   backendAddInvoice,
   backendAddReview,
-  backendAddService,
   backendDeleteBillingCustomer,
   backendDeleteBillingItem,
   backendDeleteContactMessage,
@@ -37,14 +36,12 @@ import {
   backendDeleteInvoice,
   backendDeleteOrder,
   backendDeleteReview,
-  backendDeleteService,
   backendMarkMessageRead,
   backendUpdateBillingItem,
   backendUpdateEmployee,
   backendUpdateInvoice,
   backendUpdateOrder,
   backendUpdateReview,
-  backendUpdateService,
   compressImage,
   fetchCustomers,
   saveAboutStats,
@@ -55,13 +52,19 @@ import {
   saveVisionMission,
 } from "@/lib/backendData";
 import {
+  type FEProduct,
+  backendAddProduct,
+  backendDeleteProduct,
+  backendUpdateProduct,
+  migrateServicesToProducts,
+} from "@/lib/products";
+import {
   type BillingCustomer,
   type BillingItem,
   type Employee,
   type Invoice,
   type InvoiceItem,
   type Review,
-  type Service,
   getBannerImage,
   getLogo,
   getNextInvoiceNumber,
@@ -98,6 +101,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 
 const DEFAULT_TERMS = `1. Payment is due within 7 days of invoice date.
 2. No refund or cancellation after printing starts.
@@ -180,7 +184,7 @@ export default function AdminDashboardPage() {
   const [_reviews, setReviews] = useState<Review[]>([]);
   // BUG-002 FIX: Use React Query hooks for employees & services (real-time sync across devices)
   const { data: employees = [] } = useEmployees();
-  const { data: services = [] } = useServices();
+  const { data: products = [] } = useProducts();
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
   const [editingInvoice, setEditingInvoice] = useState<Invoice | null>(null);
 
@@ -239,19 +243,18 @@ export default function AdminDashboardPage() {
   const [editingEmp, setEditingEmp] = useState<Employee | null>(null);
   const empPhotoRef = useRef<HTMLInputElement>(null);
 
-  // Service form
-  const emptySvc = {
+  // Product form
+  const emptyProduct = {
     name: "",
     description: "",
     price: "",
-    icon: "🖨️",
     image: "",
     inStock: true,
     discount: 0,
   };
-  const [svcForm, setSvcForm] = useState(emptySvc);
-  const [editingSvc, setEditingSvc] = useState<Service | null>(null);
-  const svcImageRef = useRef<HTMLInputElement>(null);
+  const [productForm, setProductForm] = useState(emptyProduct);
+  const [editingProduct, setEditingProduct] = useState<FEProduct | null>(null);
+  const productImageRef = useRef<HTMLInputElement>(null);
 
   // Billing Item form
   const emptyBillingItem = {
@@ -327,6 +330,15 @@ export default function AdminDashboardPage() {
   useEffect(() => {
     if (logoFromBackend) setLogoPreview(logoFromBackend);
   }, [logoFromBackend]);
+
+  // Run one-time migration from old services to new products
+  useEffect(() => {
+    if (actor) {
+      migrateServicesToProducts(actor).then(() => {
+        invalidate(["products"]);
+      });
+    }
+  }, [actor, invalidate]);
 
   // Load customers when customers tab becomes active
   useEffect(() => {
@@ -621,46 +633,62 @@ export default function AdminDashboardPage() {
     }
   }
 
-  function handleSvcImage(e: React.ChangeEvent<HTMLInputElement>) {
+  // ---- Product (new backend) handlers ----
+
+  function handleProductImage(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
     reader.onload = (ev) =>
-      setSvcForm((p) => ({ ...p, image: ev.target?.result as string }));
+      setProductForm((p) => ({ ...p, image: ev.target?.result as string }));
     reader.readAsDataURL(file);
   }
 
-  async function handleSaveService(e: React.FormEvent) {
+  async function handleSaveProduct(e: React.FormEvent) {
     e.preventDefault();
-    if (editingSvc) {
-      const updated = { ...svcForm, id: editingSvc.id };
-      await backendUpdateService(actor, updated);
-    } else {
-      await backendAddService(actor, svcForm);
+    try {
+      if (editingProduct) {
+        await backendUpdateProduct(actor, {
+          ...editingProduct,
+          ...productForm,
+        });
+        toast.success("Product updated!");
+      } else {
+        await backendAddProduct(actor, productForm);
+        toast.success("Product added!");
+      }
+      setProductForm(emptyProduct);
+      setEditingProduct(null);
+      if (productImageRef.current) productImageRef.current.value = "";
+      invalidate(["products"]);
+    } catch (err) {
+      console.error("handleSaveProduct error", err);
+      toast.error("Failed to save product. Please try again.");
     }
-    setSvcForm(emptySvc);
-    setEditingSvc(null);
-    if (svcImageRef.current) svcImageRef.current.value = "";
-    invalidate(["services"]);
   }
 
-  function handleEditSvc(svc: Service) {
-    setEditingSvc(svc);
-    setSvcForm({
-      name: svc.name,
-      description: svc.description,
-      price: svc.price,
-      icon: svc.icon,
-      image: svc.image || "",
-      inStock: svc.inStock !== false,
-      discount: svc.discount || 0,
+  function handleEditProduct(p: FEProduct) {
+    setEditingProduct(p);
+    setProductForm({
+      name: p.name,
+      description: p.description,
+      price: p.price,
+      image: p.image || "",
+      inStock: p.inStock !== false,
+      discount: p.discount || 0,
     });
   }
 
-  async function handleDeleteSvc(id: string) {
-    if (window.confirm("Delete this service?")) {
-      await backendDeleteService(actor, id);
-      invalidate(["services"]);
+  async function handleDeleteProduct(id: string) {
+    if (window.confirm("Delete this product?")) {
+      try {
+        await backendDeleteProduct(actor, id);
+        invalidate(["products"]);
+        toast.success("Product deleted.");
+      } catch (err) {
+        console.error("handleDeleteProduct error", err);
+        toast.error("Failed to delete product.");
+      }
     }
   }
 
@@ -1933,193 +1961,216 @@ export default function AdminDashboardPage() {
           </div>
         )}
 
-        {/* ===== SERVICES TAB ===== */}
+        {/* ===== SERVICES / PRODUCTS TAB ===== */}
         {view === "list" && tab === "services" && (
           <div className="animate-fade-in">
-            <div className="mb-6">
-              <h1 className="font-heading font-bold text-2xl text-brand-blue">
-                Services Management
-              </h1>
-              <p className="text-muted-foreground text-sm">
-                {services.length} services • Changes reflect instantly on the
-                Products page
-              </p>
+            <div className="mb-6 flex items-start justify-between gap-4">
+              <div>
+                <h1 className="font-heading font-bold text-2xl text-brand-blue">
+                  Products Management
+                </h1>
+                <p className="text-muted-foreground text-sm">
+                  {products.length} product{products.length !== 1 ? "s" : ""} •
+                  Stored in backend — visible across all devices instantly
+                </p>
+              </div>
+              {products.length >= 20 && !editingProduct && (
+                <div className="bg-yellow-50 border border-yellow-300 rounded-lg px-4 py-2 text-sm text-yellow-800 font-semibold">
+                  ⚠️ Limit reached (20/20). Upgrade required to add more.
+                </div>
+              )}
             </div>
-            <Card className="border-2 border-border shadow-card mb-8">
-              <CardHeader>
-                <CardTitle className="text-brand-blue">
-                  {editingSvc ? "Edit Service" : "Add New Service"}
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <form onSubmit={handleSaveService} className="space-y-4">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <Label className="text-brand-blue font-semibold">
-                        Service Name *
-                      </Label>
-                      <Input
-                        value={svcForm.name}
-                        onChange={(e) =>
-                          setSvcForm((p) => ({ ...p, name: e.target.value }))
-                        }
-                        placeholder="e.g. T-Shirt Printing"
-                        required
-                        className="mt-1"
-                      />
-                    </div>
-                    <div>
-                      <Label className="text-brand-blue font-semibold">
-                        Price *
-                      </Label>
-                      <Input
-                        value={svcForm.price}
-                        onChange={(e) =>
-                          setSvcForm((p) => ({ ...p, price: e.target.value }))
-                        }
-                        placeholder="e.g. Rs 500 per shirt"
-                        required
-                        className="mt-1"
-                      />
-                    </div>
-                    <div>
-                      <Label className="text-brand-blue font-semibold">
-                        Icon (Emoji)
-                      </Label>
-                      <Input
-                        value={svcForm.icon}
-                        onChange={(e) =>
-                          setSvcForm((p) => ({ ...p, icon: e.target.value }))
-                        }
-                        placeholder="e.g. 🖨️"
-                        className="mt-1"
-                      />
-                    </div>
-                    <div>
-                      <Label className="text-brand-blue font-semibold">
-                        Discount %
-                      </Label>
-                      <Input
-                        type="number"
-                        min="0"
-                        max="100"
-                        value={svcForm.discount}
-                        onChange={(e) =>
-                          setSvcForm((p) => ({
-                            ...p,
-                            discount: Number(e.target.value) || 0,
-                          }))
-                        }
-                        placeholder="0"
-                        className="mt-1"
-                      />
-                    </div>
-                    <div className="flex items-center gap-3 mt-2">
-                      <Label className="text-brand-blue font-semibold">
-                        In Stock
-                      </Label>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setSvcForm((p) => ({ ...p, inStock: !p.inStock }))
-                        }
-                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${svcForm.inStock ? "bg-green-500" : "bg-gray-300"}`}
-                        data-ocid="admin.services.toggle"
-                      >
-                        <span
-                          className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${svcForm.inStock ? "translate-x-6" : "translate-x-1"}`}
+
+            {/* Add / Edit form */}
+            {(products.length < 20 || editingProduct) && (
+              <Card className="border-2 border-border shadow-card mb-8">
+                <CardHeader>
+                  <CardTitle className="text-brand-blue">
+                    {editingProduct ? "Edit Product" : "Add New Product"}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <form onSubmit={handleSaveProduct} className="space-y-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <Label className="text-brand-blue font-semibold">
+                          Product Name *
+                        </Label>
+                        <Input
+                          value={productForm.name}
+                          onChange={(e) =>
+                            setProductForm((p) => ({
+                              ...p,
+                              name: e.target.value,
+                            }))
+                          }
+                          placeholder="e.g. T-Shirt Printing"
+                          required
+                          className="mt-1"
+                          data-ocid="admin.services.input"
                         />
-                      </button>
-                      <span className="text-sm text-muted-foreground">
-                        {svcForm.inStock ? "In Stock" : "Sold Out"}
-                      </span>
-                    </div>
-                    <div>
-                      <Label className="text-brand-blue font-semibold">
-                        Product Image
-                      </Label>
-                      <Input
-                        ref={svcImageRef}
-                        type="file"
-                        accept="image/*"
-                        onChange={handleSvcImage}
-                        className="mt-1"
-                      />
-                      {svcForm.image && (
-                        <div className="mt-2 flex items-center gap-2">
-                          <img
-                            src={svcForm.image}
-                            alt="preview"
-                            className="w-16 h-16 rounded object-cover border border-border"
+                      </div>
+                      <div>
+                        <Label className="text-brand-blue font-semibold">
+                          Price *
+                        </Label>
+                        <Input
+                          value={productForm.price}
+                          onChange={(e) =>
+                            setProductForm((p) => ({
+                              ...p,
+                              price: e.target.value,
+                            }))
+                          }
+                          placeholder="e.g. Rs 500 per shirt"
+                          required
+                          className="mt-1"
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-brand-blue font-semibold">
+                          Discount %
+                        </Label>
+                        <Input
+                          type="number"
+                          min="0"
+                          max="100"
+                          value={productForm.discount}
+                          onChange={(e) =>
+                            setProductForm((p) => ({
+                              ...p,
+                              discount: Number(e.target.value) || 0,
+                            }))
+                          }
+                          placeholder="0"
+                          className="mt-1"
+                        />
+                      </div>
+                      <div className="flex items-center gap-3 mt-2">
+                        <Label className="text-brand-blue font-semibold">
+                          In Stock
+                        </Label>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setProductForm((p) => ({
+                              ...p,
+                              inStock: !p.inStock,
+                            }))
+                          }
+                          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${productForm.inStock ? "bg-green-500" : "bg-gray-300"}`}
+                          data-ocid="admin.services.toggle"
+                        >
+                          <span
+                            className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${productForm.inStock ? "translate-x-6" : "translate-x-1"}`}
                           />
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setSvcForm((p) => ({ ...p, image: "" }))
-                            }
-                            className="text-xs text-brand-red hover:underline"
-                          >
-                            Remove
-                          </button>
-                        </div>
+                        </button>
+                        <span className="text-sm text-muted-foreground">
+                          {productForm.inStock ? "In Stock" : "Sold Out"}
+                        </span>
+                      </div>
+                      <div>
+                        <Label className="text-brand-blue font-semibold">
+                          Product Image
+                        </Label>
+                        <Input
+                          ref={productImageRef}
+                          type="file"
+                          accept="image/*"
+                          onChange={handleProductImage}
+                          className="mt-1"
+                          data-ocid="admin.services.upload_button"
+                        />
+                        {productForm.image && (
+                          <div className="mt-2 flex items-center gap-2">
+                            <img
+                              src={productForm.image}
+                              alt="preview"
+                              className="w-16 h-16 rounded object-cover border border-border"
+                            />
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setProductForm((p) => ({ ...p, image: "" }))
+                              }
+                              className="text-xs text-brand-red hover:underline"
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                      <div className="sm:col-span-2">
+                        <Label className="text-brand-blue font-semibold">
+                          Description *
+                        </Label>
+                        <Textarea
+                          value={productForm.description}
+                          onChange={(e) =>
+                            setProductForm((p) => ({
+                              ...p,
+                              description: e.target.value,
+                            }))
+                          }
+                          placeholder="Short description..."
+                          required
+                          rows={2}
+                          className="mt-1"
+                        />
+                      </div>
+                    </div>
+                    <div className="flex gap-3">
+                      <Button
+                        type="submit"
+                        className="bg-brand-blue text-white hover:bg-brand-blue-dark"
+                        data-ocid="admin.services.submit_button"
+                      >
+                        <Plus className="w-4 h-4 mr-2" />
+                        {editingProduct ? "Update Product" : "Add Product"}
+                      </Button>
+                      {editingProduct && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => {
+                            setEditingProduct(null);
+                            setProductForm(emptyProduct);
+                            if (productImageRef.current)
+                              productImageRef.current.value = "";
+                          }}
+                          data-ocid="admin.services.cancel_button"
+                        >
+                          Cancel
+                        </Button>
                       )}
                     </div>
-                    <div className="sm:col-span-2">
-                      <Label className="text-brand-blue font-semibold">
-                        Description *
-                      </Label>
-                      <Textarea
-                        value={svcForm.description}
-                        onChange={(e) =>
-                          setSvcForm((p) => ({
-                            ...p,
-                            description: e.target.value,
-                          }))
-                        }
-                        placeholder="Short description..."
-                        required
-                        rows={2}
-                        className="mt-1"
-                      />
-                    </div>
-                  </div>
-                  <div className="flex gap-3">
-                    <Button
-                      type="submit"
-                      className="bg-brand-blue text-white hover:bg-brand-blue-dark"
-                      data-ocid="admin.services.submit_button"
-                    >
-                      <Plus className="w-4 h-4 mr-2" />{" "}
-                      {editingSvc ? "Update Service" : "Add Service"}
-                    </Button>
-                    {editingSvc && (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={() => {
-                          setEditingSvc(null);
-                          setSvcForm(emptySvc);
-                          if (svcImageRef.current)
-                            svcImageRef.current.value = "";
-                        }}
-                      >
-                        Cancel
-                      </Button>
-                    )}
-                  </div>
-                </form>
-              </CardContent>
-            </Card>
+                  </form>
+                </CardContent>
+              </Card>
+            )}
+
+            {products.length === 0 && (
+              <div
+                className="text-center py-12 border-2 border-dashed border-border rounded-2xl text-muted-foreground"
+                data-ocid="admin.services.empty_state"
+              >
+                <Package className="w-10 h-10 mx-auto mb-3 opacity-30" />
+                <p className="font-semibold">No products yet</p>
+                <p className="text-sm">Add your first product above.</p>
+              </div>
+            )}
+
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {services.map((svc) => (
+              {products.map((product, pi) => (
                 <Card
-                  key={svc.id}
+                  key={product.id}
                   className="border-2 border-border shadow-card overflow-hidden"
+                  data-ocid={`admin.services.item.${pi + 1}`}
                 >
-                  {svc.image && (
+                  {product.image && (
                     <img
-                      src={svc.image}
-                      alt={svc.name}
+                      src={product.image}
+                      alt={product.name}
                       className="w-full h-28 object-cover"
                     />
                   )}
@@ -2127,26 +2178,27 @@ export default function AdminDashboardPage() {
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex-1">
                         <div className="flex items-center gap-2 mb-1 flex-wrap">
-                          <span className="text-2xl">{svc.icon}</span>
                           <p className="font-bold text-brand-blue">
-                            {svc.name}
+                            {product.name}
                           </p>
                           <span
-                            className={`text-xs px-2 py-0.5 rounded-full font-bold ${svc.inStock !== false ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}
+                            className={`text-xs px-2 py-0.5 rounded-full font-bold ${product.inStock !== false ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}
                           >
-                            {svc.inStock !== false ? "In Stock" : "Sold Out"}
+                            {product.inStock !== false
+                              ? "In Stock"
+                              : "Sold Out"}
                           </span>
                         </div>
                         <p className="text-sm text-muted-foreground mb-2">
-                          {svc.description}
+                          {product.description}
                         </p>
                         <div className="flex gap-2 flex-wrap">
                           <span className="inline-block bg-brand-gold/10 text-brand-gold border border-brand-gold/30 px-2 py-0.5 rounded text-xs font-bold">
-                            {svc.price}
+                            {product.price}
                           </span>
-                          {(svc.discount || 0) > 0 && (
+                          {(product.discount || 0) > 0 && (
                             <span className="inline-block bg-red-100 text-brand-red border border-brand-red/20 px-2 py-0.5 rounded text-xs font-bold">
-                              {svc.discount}% OFF
+                              {product.discount}% OFF
                             </span>
                           )}
                         </div>
@@ -2155,16 +2207,18 @@ export default function AdminDashboardPage() {
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={() => handleEditSvc(svc)}
+                          onClick={() => handleEditProduct(product)}
                           className="border-brand-gold text-brand-gold hover:bg-brand-gold hover:text-white h-8 px-2"
+                          data-ocid={`admin.services.edit_button.${pi + 1}`}
                         >
                           <Pencil className="w-3 h-3" />
                         </Button>
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={() => handleDeleteSvc(svc.id)}
+                          onClick={() => handleDeleteProduct(product.id)}
                           className="border-brand-red text-brand-red hover:bg-brand-red hover:text-white h-8 px-2"
+                          data-ocid={`admin.services.delete_button.${pi + 1}`}
                         >
                           <Trash2 className="w-3 h-3" />
                         </Button>

@@ -249,49 +249,8 @@ function safeParseJson(json: string): Record<string, unknown> {
   }
 }
 
-async function saveExtendedData(
-  actor: backendInterface | null,
-  data: ExtendedData,
-): Promise<void> {
-  // Save to local first as a safe fallback.
-  saveLocalExtendedData(data);
-
-  if (actor) {
-    // Split into 3 small chunks to stay within ICP message limits
-    const companiesChunk = JSON.stringify({
-      companies: data.companies,
-    });
-    const employeesChunk = JSON.stringify({
-      employeePhotos: data.employeePhotos,
-    });
-    const servicesChunk = JSON.stringify({
-      serviceImages: data.serviceImages,
-      gallery: data.gallery,
-      vision: data.vision,
-      mission: data.mission,
-    });
-
-    // Save all 3 in parallel
-    const results = await Promise.allSettled([
-      actor.setCompaniesJson(companiesChunk),
-      actor.setEmployeesJson(employeesChunk),
-      actor.setServicesJson(servicesChunk),
-    ]);
-
-    const anyFailed = results.some((r) => r.status === "rejected");
-    if (anyFailed) {
-      console.warn("saveExtendedData: some backend saves failed", results);
-      // Don't update cache — force re-fetch on next poll
-    } else {
-      _extDataCache = data;
-      _extDataCacheTime = Date.now();
-    }
-  } else {
-    // No actor — update cache immediately for local-only path
-    _extDataCache = data;
-    _extDataCacheTime = Date.now();
-  }
-}
+// saveExtendedData removed: each section now writes only its own dedicated chunk
+// (companies → setCompaniesJson, employees → setEmployeesJson, services/gallery/vision → setServicesJson)
 
 // -----------------------------------------------------------------------
 // Image compression helper
@@ -477,10 +436,29 @@ export async function backendAddService(
         discount: BigInt(Math.round(svc.discount || 0)),
       });
 
-      // STEP 2: Save image to extended data
-      const extData = await fetchExtendedData(actor);
-      extData.serviceImages[idStr] = compressedImage;
-      await saveExtendedData(actor, extData);
+      // STEP 2: Save image to servicesJson only (NOT full saveExtendedData which would overwrite employees/companies)
+      const rawServices = await actor.getServicesJson().catch(() => "");
+      const svcData = rawServices?.trim()
+        ? ((): Record<string, unknown> => {
+            try {
+              return JSON.parse(rawServices);
+            } catch {
+              return {};
+            }
+          })()
+        : {};
+      const svcImages: Record<string, string> =
+        (svcData.serviceImages as Record<string, string>) || {};
+      svcImages[idStr] = compressedImage;
+      const svcChunk = JSON.stringify({
+        serviceImages: svcImages,
+        gallery: (svcData.gallery as string[]) || [],
+        vision: (svcData.vision as string) || "",
+        mission: (svcData.mission as string) || "",
+      });
+      await actor.setServicesJson(svcChunk);
+      _extDataCache = null;
+      _extDataCacheTime = 0;
     } catch (e) {
       console.warn("backendAddService error", e);
       throw e;
@@ -523,10 +501,29 @@ export async function backendUpdateService(
         discount: BigInt(Math.round(svc.discount || 0)),
       });
 
-      // STEP 2: Update image in extended data
-      const extData = await fetchExtendedData(actor);
-      extData.serviceImages[svc.id] = compressedImage;
-      await saveExtendedData(actor, extData);
+      // STEP 2: Update image in servicesJson only
+      const rawServices = await actor.getServicesJson().catch(() => "");
+      const svcData = rawServices?.trim()
+        ? ((): Record<string, unknown> => {
+            try {
+              return JSON.parse(rawServices);
+            } catch {
+              return {};
+            }
+          })()
+        : {};
+      const svcImages: Record<string, string> =
+        (svcData.serviceImages as Record<string, string>) || {};
+      svcImages[svc.id] = compressedImage;
+      const svcChunk = JSON.stringify({
+        serviceImages: svcImages,
+        gallery: (svcData.gallery as string[]) || [],
+        vision: (svcData.vision as string) || "",
+        mission: (svcData.mission as string) || "",
+      });
+      await actor.setServicesJson(svcChunk);
+      _extDataCache = null;
+      _extDataCacheTime = 0;
     } catch (e) {
       console.warn("backendUpdateService error", e);
       throw e;
@@ -552,9 +549,28 @@ export async function backendDeleteService(
       await actor.deleteService(BigInt(id));
 
       // STEP 2: Remove image from extended data
-      const extData = await fetchExtendedData(actor);
-      delete extData.serviceImages[id];
-      await saveExtendedData(actor, extData);
+      const rawServices = await actor.getServicesJson().catch(() => "");
+      const svcData = rawServices?.trim()
+        ? ((): Record<string, unknown> => {
+            try {
+              return JSON.parse(rawServices);
+            } catch {
+              return {};
+            }
+          })()
+        : {};
+      const svcImages: Record<string, string> =
+        (svcData.serviceImages as Record<string, string>) || {};
+      delete svcImages[id];
+      const svcChunk = JSON.stringify({
+        serviceImages: svcImages,
+        gallery: (svcData.gallery as string[]) || [],
+        vision: (svcData.vision as string) || "",
+        mission: (svcData.mission as string) || "",
+      });
+      await actor.setServicesJson(svcChunk);
+      _extDataCache = null;
+      _extDataCacheTime = 0;
     } catch (e) {
       console.warn("backendDeleteService error", e);
       throw e;
@@ -1358,16 +1374,25 @@ export async function saveCompanies(
   actor: backendInterface | null,
   companies: Company[],
 ): Promise<void> {
+  // FIX: Write ONLY companiesJson — never touch employeesJson or servicesJson.
+  // Previously this called saveExtendedData which overwrote all 3 chunks,
+  // causing employees/gallery to disappear whenever companies were saved.
   if (actor) {
-    const extData = await fetchExtendedData(actor);
-    extData.companies = companies;
-    await saveExtendedData(actor, extData);
+    const chunk = JSON.stringify({ companies });
+    await actor.setCompaniesJson(chunk);
+    // Invalidate cache so next fetchExtendedData reads fresh data from all 3 chunks
+    _extDataCache = null;
+    _extDataCacheTime = 0;
+    // Keep localStorage in sync for offline fallback
+    const local = getLocalExtendedData();
+    local.companies = companies;
+    saveLocalExtendedData(local);
   } else {
     const extData = getLocalExtendedData();
     extData.companies = companies;
     saveLocalExtendedData(extData);
-    _extDataCache = extData;
-    _extDataCacheTime = Date.now();
+    _extDataCache = null;
+    _extDataCacheTime = 0;
   }
 }
 
@@ -1386,16 +1411,29 @@ export async function saveGallery(
   actor: backendInterface | null,
   images: string[],
 ): Promise<void> {
+  // FIX: Write ONLY servicesJson gallery field — never overwrite companiesJson/employeesJson.
   if (actor) {
-    const extData = await fetchExtendedData(actor);
-    extData.gallery = images;
-    await saveExtendedData(actor, extData);
+    // Read current servicesJson first to preserve serviceImages, vision, mission
+    const rawServices = await actor.getServicesJson().catch(() => "");
+    const svcData = rawServices?.trim() ? safeParseJson(rawServices) : {};
+    const newChunk = JSON.stringify({
+      serviceImages: (svcData.serviceImages as Record<string, string>) || {},
+      gallery: images,
+      vision: (svcData.vision as string) || "",
+      mission: (svcData.mission as string) || "",
+    });
+    await actor.setServicesJson(newChunk);
+    _extDataCache = null;
+    _extDataCacheTime = 0;
+    const local = getLocalExtendedData();
+    local.gallery = images;
+    saveLocalExtendedData(local);
   } else {
     const extData = getLocalExtendedData();
     extData.gallery = images;
     saveLocalExtendedData(extData);
-    _extDataCache = extData;
-    _extDataCacheTime = Date.now();
+    _extDataCache = null;
+    _extDataCacheTime = 0;
   }
 }
 
@@ -1415,18 +1453,31 @@ export async function saveVisionMission(
   vision: string,
   mission: string,
 ): Promise<void> {
+  // FIX: Write ONLY servicesJson vision/mission fields — never overwrite companiesJson/employeesJson.
   if (actor) {
-    const extData = await fetchExtendedData(actor);
-    extData.vision = vision;
-    extData.mission = mission;
-    await saveExtendedData(actor, extData);
+    // Read current servicesJson first to preserve serviceImages and gallery
+    const rawServices = await actor.getServicesJson().catch(() => "");
+    const svcData = rawServices?.trim() ? safeParseJson(rawServices) : {};
+    const newChunk = JSON.stringify({
+      serviceImages: (svcData.serviceImages as Record<string, string>) || {},
+      gallery: (svcData.gallery as string[]) || [],
+      vision,
+      mission,
+    });
+    await actor.setServicesJson(newChunk);
+    _extDataCache = null;
+    _extDataCacheTime = 0;
+    const local = getLocalExtendedData();
+    local.vision = vision;
+    local.mission = mission;
+    saveLocalExtendedData(local);
   } else {
     const extData = getLocalExtendedData();
     extData.vision = vision;
     extData.mission = mission;
     saveLocalExtendedData(extData);
-    _extDataCache = extData;
-    _extDataCacheTime = Date.now();
+    _extDataCache = null;
+    _extDataCacheTime = 0;
   }
 }
 
